@@ -174,12 +174,6 @@ url-encode: use [ch mk][
     ]
 ]
 speak: func [ message /local err ][
-?? fkey
-?? message
-?? chat-target-url
-probe compose/deep header
-probe url-encode message
-
     if error? set/any 'err try [
         to string! write chat-target-url compose/deep  copy/deep [
             POST
