@@ -3,7 +3,7 @@ Rebol [
     author: "Graham Chiu"
     rights: "BSD"
     date: 17-June-2013
-    version: 0.0.2
+    version: 0.0.3
           instructions: {
             use the r3-view.exe client from Saphirion for windows currently at http://development.saphirion.com/resources/r3-view.exe
             and then just run this client
@@ -32,7 +32,7 @@ if not value? 'decode-xml [
 
 no-of-messages: 5
 lastmessage-no: 10025800
-wait-period: 1
+wait-period: 0:0:5
 
 bot-cookie: fkey: none
 
@@ -236,6 +236,10 @@ view [
                             ]
                         ]
                     ]
+                                hpanel [ 
+                                    label "Last Checked: " update-fld: field "" ; options [ max-hint: 40x5 ] 
+                                    ; pad 400x5
+                                ]
                     hpanel [
                         box 30x30 chat-area: area "" 300x30 options [min-hint: 500x30]
                         htight 2 [
@@ -270,6 +274,8 @@ view [
                                         msg/5: from-now utc-to-local unix-to-utc msg/5
                                     ]
                                     SET-FACE/FIELD message-table data 'data
+                                                                        set-face update-fld form now
+                                                                        print now
                                     wait wait-period
                                 ]
                             ]
