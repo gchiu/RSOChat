@@ -2,7 +2,7 @@ Rebol [
 	title: "Rebol Stack Overflow Chat Client"
 	author: "Graham Chiu"
 	rights: "BSD"
-	date: [17-June-2013 19-June-2013]
+	date: [17-June-2013 19-June-2013 21-June-2013]
 	version: 0.0.6
 	instructions: {
             use the r3-view.exe client from Saphirion for windows currently at http://development.saphirion.com/resources/r3-view.exe
@@ -19,7 +19,7 @@ Rebol [
 	history: {
             17-June-2013 first attempt at using text-table
             19-June-2013 using a server port to simulate a timer .. and gets a MS Visual C++ runtime error :(  So, back to using a forever loop with a wait
-            21-June-2013 using a closure for the mini-http function appears to delay the crashes
+            21-June-2013 using a closure for the mini-http function appears to delay the crashes, removed unused code
           }
 
 ]
@@ -42,7 +42,7 @@ if not value? 'decode-xml [
 
 no-of-messages: 5
 lastmessage-no: 10025800
-wait-period: 0:0:5
+wait-period: 5.0 ; seconds
 tid-1: tid-2: none
 
 bot-cookie: fkey: none
@@ -124,28 +124,6 @@ do load-config: func [] [
 	]
 ]
 
-timestamp:
-person-id:
-message-id:
-parent-id: 0
-user-name: make string! 20
-
-message-rule: [
-	<event_type> quote 1 |
-	<time_stamp> set timestamp integer! |
-	<content> set content string! |
-	<id> integer! |
-	<user_id> set person-id integer! |
-	<user_name> set user-name string! |
-	<room_id> integer! |
-	<room_name> string! |
-	<message_id> set message-id integer! |
-	<parent_id> set parent-id integer! |
-	<show_parent> logic! |
-	tag! skip |
-	end
-]
-
 
 unix-to-utc: func [unix [string! integer!]
 	/local days d
@@ -183,7 +161,7 @@ two-minutes-ago: does [
 ]
 
 grab-icons: func [url
-	/local icon-bar name image-url image link is-image?
+	/local icon-bar name image-url image link is-image? page gravatar-rule
 ] [
 	icon-bar: copy []
 	gravatar-rule: union charset [#"0" - #"9"] charset [#"a" - #"z"]
@@ -219,86 +197,6 @@ grab-icons: func [url
 	]
 	icon-bar
 ]
-awake-client: func [event /local port] [
-	port: event/port
-	print ["received event of " event/type]
-	switch/default event/type [
-		read [
-			probe to string! port/data
-			write port to binary! "ACK^/"
-			mini-http/cookies read-target-url 'POST rejoin ["since=0&mode=Messages&msgCount=10&fkey=" fkey] 60
-			bot-cookie
-			false
-		]
-		close [close port true]
-		error [close port true]
-		wrote [read port false]
-	] [false]
-]
-
-awake-server: func [event /local client] [
-
-	probe event/type
-
-	if event/type = 'accept [
-		print "client connection received .."
-		client: first event/port
-		client/awake: :awake-client
-		read client
-	]
-]
-
-serve: func [web-port /local listen-port] [
-	listen-port: open join tcp://: web-port
-	listen-port/awake: :awake-server
-	print ["listening on port .. " web-port " and r3gui window"]
-	wait listen-port
-]
-do-download: closure [url [url!] content-area [object!] /local port prg progress-bar] [
-	prg: 0
-	; url: to-url get-face url-field
-	port: make port! url
-	port/awake: funct [event] [
-		switch event/type [
-			connect [
-				;; Use HTTP's READ actor to send the HTTP request once we are
-				;; connected.
-				;		append-content progress-panel [progress 1x1]
-				;		set 'progress-bar last faces? progress-panel
-				;		append log rejoin [now/precise/time " Started download of: " url newline]
-				;		set-face content-area log
-				read event/port
-			]
-			read [
-				;; Schedule the low-level TCP port for further reading.
-				;; (@@ Smells! Should be taken care of by the HTTP scheme.)
-				;sice we don't know the total data size we are cheating a bit here ;)
-				;		set-face progress-bar set 'prg prg + (1 - prg / 50)
-				if event/port/data [
-					probe to string! event/port/data
-					;show-face content-area to string! event/port/data
-					;show-now content-area
-				]
-				read event/port/state/connection
-			]
-
-			done [
-				;		remove-content/pos progress-panel progress-bar
-				;		show-now progress-panel
-				;; Use HTTP's COPY actor to read the full website content once
-				;; reading is finished.
-				;		append log rejoin [now/precise/time " Finished download of: " url newline]
-				;set-face content-area log
-				close event/port
-				return true
-			]
-		]
-		false
-	]
-	open port
-	;	wait port
-]
-
 ; mini-http is a minimalistic http implementation
 
 
@@ -479,31 +377,6 @@ speak: func [message /local err] [
 	]
 ]
 
-read-messages: func [cnt] [
-	to string! write read-target-url compose/deep copy/deep [
-		POST
-		[(header)]
-		(rejoin ["since=0&mode=Messages&msgCount=" cnt "&fkey=" fkey])
-	]
-]
-update-messages: func [] [
-	attempt [
-		result: load-json/flat read-messages no-of-messages
-		messages: result/2
-		; now skip thru each message and see if any unread
-		foreach msg messages [
-			content: user-name: none message-no: 0
-			either parse msg [some message-rule] [
-				content: trim decode-xml content
-				if message-id > lastmessage-no [
-					lastmessage-no: message-id
-					repend/only system/contexts/user/all-messages [person-id message-id user-name content timestamp]
-				]
-			] [print "failed"]
-		]
-	]
-]
-
 print "loading images"
 
 tool-bar-data: grab-icons referrer-url
@@ -538,9 +411,9 @@ view compose/deep [
 				vpanel [
 					hpanel [
 						time-fld: field ""
-						update-fld: field "" ; options [ max-hint: 40x5 ] 
+						update-fld: field ""
 					]
-					box 30x30
+					box white
 				]
 				chat-area: area "" 300x30 options [min-hint: 500x30]
 				htight 2 [
@@ -581,7 +454,7 @@ view compose/deep [
 						set 'tid-1 set-timer/repeat [
 							mini-http/cookies read-target-url 'POST rejoin ["since=0&mode=Messages&msgCount=10&fkey=" fkey] 60 bot-cookie
 
-						] 5.0
+						] wait-period
 
 
 					]
