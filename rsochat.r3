@@ -3,7 +3,7 @@ Rebol [
 	author: "Graham Chiu"
 	rights: "BSD"
 	date: [17-June-2013 19-June-2013 21-June-2013]
-	version: 0.0.6
+	version: 0.0.7
 	instructions: {
             use the r3-view.exe client from Saphirion for windows currently at http://development.saphirion.com/resources/r3-view.exe
             and then just run this client
@@ -64,6 +64,20 @@ read-target-url: rejoin [so-chat-url 'chats "/" room-id "/" 'events]
 delete-url: [so-chat-url 'messages "/" (parent-id) "/" 'delete]
 
 
+; perhaps not all of this header is required
+header: [
+	Host: "chat.stackoverflow.com"
+	Origin: "http://chat.stackoverflow.com"
+	Accept: "application/json, text/javascript, */*; q=0.01"
+	X-Requested-With: "XMLHttpRequest"
+	Referer: (referrer-url)
+	Accept-Encoding: "gzip,deflate"
+	Accept-Language: "en-US"
+	Accept-Charset: "ISO-8859-1,utf-8;q=0.7,*;q=0.3"
+	Content-Type: "application/x-www-form-urlencoded"
+	cookie: (bot-cookie)
+]
+
 do load-config: func [] [
 	either exists? %rsoconfig.r3 [
 		rsoconfig: do load %rsoconfig.r3
@@ -85,7 +99,7 @@ do load-config: func [] [
 						[alert "Both fields required!"]
 						[
 							either parse get-face cookie-area [to "usr=" copy cookie to "&" to end] [
-								set 'bot-cookie cookie ; get-face cookie-area
+								set 'bot-cookie get-face cookie-area
 								set 'fkey get-face fkey-fld
 								save %rsoconfig.r3 make object! compose [
 									fkey: (fkey) bot-cookie: (bot-cookie)
@@ -347,9 +361,9 @@ url-encode: use [ch mk] [
 		] [to-string text] [""]
 	]
 ]
-speak: func [message /local err] [
+speak: func [message /local err result] [
 	if error? set/any 'err try [
-		to string! write chat-target-url compose/deep copy/deep [
+		result: to string! write chat-target-url compose/deep copy/deep [
 			POST
 			[(header)]
 			(rejoin ["text=" url-encode message "&fkey=" fkey])
@@ -465,7 +479,7 @@ view compose/deep [
 								bar
 								hpanel 2 [
 									label "fkey" fk-fld: field
-									label "cookie" cookie-area: field
+									label "cookie" cookie-area: area
 								] options [black border-size: [1x1 1x1]]
 							]
 							when [load] on-action [
