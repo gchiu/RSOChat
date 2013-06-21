@@ -55,11 +55,6 @@ static-room-id: room-id: 291 room-descriptor: "rebol-and-red"
 
 id-rule: charset [#"0" - #"9"]
 
-cnt: 0
-increment-cnt: does [
-	system/contexts/user/cnt: system/contexts/user/cnt + 1
-]
-
 so-chat-url: http://chat.stackoverflow.com/
 profile-url: http://stackoverflow.com/users/
 chat-target-url: rejoin write-chat-block: [so-chat-url 'chats "/" room-id "/" 'messages/new]
@@ -68,19 +63,6 @@ html-url: rejoin [referrer-url "?highlights=false"]
 read-target-url: rejoin [so-chat-url 'chats "/" room-id "/" 'events]
 delete-url: [so-chat-url 'messages "/" (parent-id) "/" 'delete]
 
-; perhaps not all of this header is required
-header: [
-	Host: "chat.stackoverflow.com"
-	Origin: "http://chat.stackoverflow.com"
-	Accept: "application/json, text/javascript, */*; q=0.01"
-	X-Requested-With: "XMLHttpRequest"
-	Referer: (referrer-url)
-	Accept-Encoding: "gzip,deflate"
-	Accept-Language: "en-US"
-	Accept-Charset: "ISO-8859-1,utf-8;q=0.7,*;q=0.3"
-	Content-Type: "application/x-www-form-urlencoded"
-	cookie: (bot-cookie)
-]
 
 do load-config: func [] [
 	either exists? %rsoconfig.r3 [
@@ -429,7 +411,7 @@ view compose/deep [
 								set 'last-message txt
 							]
 						]
-						mini-http/cookies read-target-url 'POST rejoin ["since=0&mode=Messages&msgCount=10&fkey=" fkey] 60 bot-cookie
+						mini-http/cookies read-target-url 'POST rejoin ["since=0&mode=Messages&msgCount=" no-of-messages "&fkey=" fkey] 60 bot-cookie
 
 					]
 					button "Last Msg" on-action [
@@ -448,11 +430,11 @@ view compose/deep [
 							exit
 						]
 
-						mini-http/cookies read-target-url 'POST rejoin ["since=0&mode=Messages&msgCount=10&fkey=" fkey] 60 bot-cookie
+						mini-http/cookies read-target-url 'POST rejoin ["since=0&mode=Messages&msgCount=" no-of-messages "&fkey=" fkey] 60 bot-cookie
 
 
 						set 'tid-1 set-timer/repeat [
-							mini-http/cookies read-target-url 'POST rejoin ["since=0&mode=Messages&msgCount=10&fkey=" fkey] 60 bot-cookie
+							mini-http/cookies read-target-url 'POST rejoin ["since=0&mode=Messages&msgCount=" no-of-messages "&fkey=" fkey] 60 bot-cookie
 
 						] wait-period
 
@@ -483,8 +465,13 @@ view compose/deep [
 								bar
 								hpanel 2 [
 									label "fkey" fk-fld: field
-									label "cookie" cookie-area: area
+									label "cookie" cookie-area: field
 								] options [black border-size: [1x1 1x1]]
+							]
+							when [load] on-action [
+								set-face nom-fld no-of-messages
+								set-face fk-fld fkey
+								set-face cookie-area bot-cookie
 							]
 						]
 					]
