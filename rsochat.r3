@@ -3,7 +3,7 @@ Rebol [
 	author: "Graham Chiu"
 	rights: "BSD"
 	date: [17-June-2013 19-June-2013 21-June-2013]
-	version: 0.0.8
+	version: 0.0.9
 	instructions: {
             use the r3-view.exe client from Saphirion for windows currently at http://development.saphirion.com/resources/r3-view.exe
             and then just run this client
@@ -20,7 +20,8 @@ Rebol [
             17-June-2013 first attempt at using text-table
             19-June-2013 using a server port to simulate a timer .. and gets a MS Visual C++ runtime error :(  So, back to using a forever loop with a wait
             21-June-2013 using a closure for the mini-http function appears to delay the crashes, removed unused code
-	22-April-2014 added a facebook image check - untested
+	22-April-2014 - added a facebook image check - untested
+			- checking for posting while not logged in
           }
 
 ]
@@ -480,7 +481,9 @@ speak: func [message /local err result][
 			(rejoin ["text=" url-encode message "&fkey=" fkey])
 		]
 	][
-		mold err
+		if find err/arg1 "Server error: HTTP/1.1 404 Not Found" [
+			alert "You don't seem to be logged in .. check your credentials again"
+		]
 	]
 ]
 
