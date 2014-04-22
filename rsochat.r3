@@ -2,7 +2,7 @@ Rebol [
 	title: "Rebol Stack Overflow Chat Client"
 	author: "Graham Chiu"
 	rights: "BSD"
-	date: [17-June-2013 19-June-2013 21-June-2013 21-April-2014]
+	date: [17-June-2013 19-June-2013 21-June-2013]
 	version: 0.0.8
 	instructions: {
             use the r3-view.exe client from Saphirion for windows currently at http://development.saphirion.com/resources/r3-view.exe
@@ -12,17 +12,21 @@ Rebol [
 
             and then use the "Start" button to start grabbing messages
 
+            ;This R2 script tickles the gui to grab messages
+            ;tickle: does [ p: open/direct/lines tcp://localhost:8000 forever [ insert p "read" pick p 1 wait 0:00:5 ]]
+
           }
 	history: {
             17-June-2013 first attempt at using text-table
             19-June-2013 using a server port to simulate a timer .. and gets a MS Visual C++ runtime error :(  So, back to using a forever loop with a wait
             21-June-2013 using a closure for the mini-http function appears to delay the crashes, removed unused code
+	22-April-2014 added a facebook image check - untested
           }
 
 ]
 
 if not value? 'to-text [
-	do load-r3gui: funct [] [
+	do funct [] [
 		either exists? %r3-gui.r3 [
 			do %r3-gui.r3
 		][
@@ -237,6 +241,8 @@ grab-icons: func [url
 
 	icon-bar: copy []
 	gravatar-rule: union charset [#"0" - #"9"] charset [#"a" - #"z"]
+	;  {!http://graph.facebook.com/100000296050736/picture?type=large}
+
 	page: to string! read url
 	parse page [thru "update_user"
 		some [
@@ -245,6 +251,9 @@ grab-icons: func [url
 			(
 				is-image?: false
 				case [
+					all [#"!" = first image-url parse image-url [thru "graph.facebook.com/" copy image-url thru "?type=" to end]][
+						image-url: rejoin [http://graph.facebook.com/ image-url "small"]
+					]
 					#"!" = first image-url [
 						is-image?: true
 						remove image-url
@@ -701,7 +710,7 @@ view compose/deep [
 							foreach msg data [
 								msg/5: from-now utc-to-local unix-to-utc msg/5
 							]
-							SET-FACE/FIELD message-table data 'data
+
 							set-face update-fld form now
 							SET-FACE/FIELD message-table data 'data
 							set-face message-table/names/scr 100%
