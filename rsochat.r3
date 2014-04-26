@@ -2,8 +2,8 @@ Rebol [
 	title: "Rebol Stack Overflow Chat Client"
 	author: "Graham Chiu"
 	rights: "BSD"
-	date: [17-June-2013 19-June-2013 21-June-2013]
-	version: 0.0.9
+	date: [17-June-2013 19-June-2013 21-June-2013 27-Apr-2014]
+	version: 0.0.91
 	instructions: {
             use the r3-view.exe client from Saphirion for windows currently at http://development.saphirion.com/resources/r3-view.exe
             and then just run this client
@@ -22,6 +22,7 @@ Rebol [
             21-June-2013 using a closure for the mini-http function appears to delay the crashes, removed unused code
 	22-April-2014 - added a facebook image check - untested
 			- checking for posting while not logged in
+	27-April-2014 custom prot-http to grab images, and redirects.  Grabs cookies now and fkey
           }
 
 ]
@@ -57,10 +58,57 @@ if not value? 'decode-xml [
 	do %altxml.r3
 ]
 
+if not value? 'url-decode [
+	if not exists? %altwebform.r3 [
+		write %altwebform.r3 read http://reb4.me/r3/altwebform.r
+	]
+	do %altwebform.r3
+]
+
+; load modified http protocol to return the info object on failed http redirect
+print "loading modified prot-http.r3"
+do https://raw.githubusercontent.com/gchiu/Rebol3/master/protocols/prot-http.r3
+
+login2so: func [email [email!] password [string!] chat-page [url!]
+	/local fkey root loginpage cookiejar result err configobj
+][
+	configobj: make object! [fkey: copy "" bot-cookie: copy ""]
+	fkey: none
+	root: https://stackoverflow.com
+	; grab the first fkey from the login page
+	print "reading login page"
+	loginpage: to string! read https://stackoverflow.com/users/login
+	print "read ..."
+	if parse loginpage [thru "se-login-form" thru {action="} copy action to {"} thru "fkey" thru {value="} copy fkey to {"} thru {"submit-button"} thru {value="} copy login to {"} to end][
+		postdata: to-webform reduce ['fkey fkey 'email email 'password password 'submit-button login]
+		if error? err: try [
+			print "posting"
+			result: to-string write join root action postdata
+		][
+			print "parsing"
+			cookiejar: reform err/arg2/headers/set-cookie
+			parse cookiejar [to "usr=" copy cookiejar to ";"]
+			result: write chat-page compose/deep [GET [cookie: (cookiejar)]]
+			result: reverse decode 'markup result
+			; now grab the new fkey for the chat pages
+			foreach tag result [
+				if tag? tag [
+					if parse tag [thru "fkey" thru "hidden" thru "value" thru {"} copy fkey to {"} to end][
+						fkey: to string! fkey
+						break
+					]
+				]
+			]
+		]
+		configobj/fkey: fkey
+		configobj/bot-cookie: cookiejar
+	]
+	configobj
+]
+
 no-of-messages: 20
 lastmessage-no: 14874139 ; 10025800
 wait-period: 5.0 ; seconds
-tid-1: tid-2: none
 
 bot-cookie: fkey: none
 
@@ -100,11 +148,52 @@ header: [
 	cookie: (bot-cookie)
 ]
 
+if not exists? %rsoconfig.r3 [
+	view/modal [
+		vgroup [
+			label "Enter Stack Exchange Credentials"
+			vgroup [
+				hgroup [label "Email: " emailfld: field]
+				hgroup [label "Password: " passwordfld: field]
+			]
+			hgroup [
+				button "Login" on-action [
+					if all [
+						not empty? email: get-face emailfld
+						not empty? password: get-face passwordfld
+						attempt [email! = type? email: load email]
+					][
+						; okay, all is well
+						close-window face
+						result: login2so email password referrer-url
+						?? result
+						if any [
+							empty? result/fkey
+							empty? result/bot-cookie
+						][
+							attempt [delete %rsoconfig.r3]
+						]
+						save %rsoconfig.r3 result
+					]
+				]
+				button "Cancel" red on-action [
+					close-window face
+				]
+				when [enter] on-action [focus emailfld]
+			]
+		]
+	]
+]
+
 do load-config: func [] [
 	either exists? %rsoconfig.r3 [
-		rsoconfig: do load %rsoconfig.r3
-		set 'fkey rsoconfig/fkey
-		set 'bot-cookie rsoconfig/bot-cookie
+		if error? err: try [
+			rsoconfig: do load %rsoconfig.r3
+			set 'fkey rsoconfig/fkey
+			set 'bot-cookie trim/tail rsoconfig/bot-cookie
+		][
+			alert "rsoconfig.r3 is corrupt - use settings to set them again"
+		]
 	] [
 		view [
 			title "Enter the StackOverflow Chat Parameters"
@@ -198,8 +287,14 @@ update-icons: func [url
 			thru "name:" thru {("} copy name to {")} thru "email_hash:" thru {"} copy image-url to {"}
 			(
 				either not index: find image-cache user-id [
-					is-image?: false
 					case [
+						all [
+							#"!" = first image-url
+							parse image-url [thru "graph.facebook.com/" copy image-url thru "?type=" to end]
+						][
+							image-url: ajoin [http://graph.facebook.com/ image-url "small"]
+							is-image?: true
+						]
 						#"!" = first image-url [
 							is-image?: true
 							remove image-url
@@ -211,7 +306,14 @@ update-icons: func [url
 						]
 					]
 					if is-image? [
-						link: read to-url image-url
+
+						if error? err: try [link: read to-url image-url][
+							; check for redirect to other host as used in facebook
+							if all [find err/arg1 "Redirect" url? err/arg3][
+								link: read err/arg3
+							]
+						]
+						; examine the binary to see what type of image it is - can't rely on extension
 						either find to string! copy/part link 4 "PNG" [
 							image: decode 'PNG link
 						] [
@@ -234,9 +336,13 @@ update-icons: func [url
 	icon-bar
 ]
 
+blank-img: make image! 128x128
+
 grab-icons: func [url
 	/local icon-bar name image-url image link is-image? page gravatar-rule user-id
+	lastimage
 ] [
+	lastimage: none
 	digit: charset [#"0" - #"9"]
 	digits: [some digit]
 
@@ -252,28 +358,69 @@ grab-icons: func [url
 			(
 				is-image?: false
 				case [
-					all [#"!" = first image-url parse image-url [thru "graph.facebook.com/" copy image-url thru "?type=" to end]][
-						image-url: rejoin [http://graph.facebook.com/ image-url "small"]
+					all [
+						#"!" = first image-url
+						parse image-url [thru "graph.facebook.com/" copy image-url thru "?type=" to end]
+					][
+						image-url: ajoin [http://graph.facebook.com/ image-url "small"]
+						is-image?: true
+						print 'facebook
+
 					]
 					#"!" = first image-url [
 						is-image?: true
 						remove image-url
 						append image-url "?g&s=32"
+						print 'stack-imgur
 					]
 					parse image-url [some gravatar-rule] [
 						is-image?: true
 						image-url: ajoin [http://www.gravatar.com/avatar/ image-url "?s=32&d=identicon&r=PG"]
+						print 'Gravatar
 					]
 				]
 				if is-image? [
+					?? image-url
 					link: read to-url image-url
-					either find to string! copy/part link 4 "PNG" [
-						image: decode 'PNG link
-					] [
-						image: decode 'JPEG link
+
+					comment {
+					if error? err: try [
+						link: read to-url image-url
+					][
+						; check for redirect to other host as used in facebook
+						if all [find err/arg1 "Redirect" url? err/arg3][
+							print "*** error redirect ****"
+							link: read err/arg3
+						]
 					]
+}
+					; probe to-string copy/part link 10
+					; examine the binary to see what type of image it is - can't rely on extension
+					imagetext: to string! copy/part link 20
+					case [
+						find/part imagetext "PNG" 4 [
+							image: decode 'PNG link
+							print 'PNG
+						]
+						find/part imagetext "JFIF" 10 [
+							image: decode 'JPEG link
+							print 'JPEG
+						]
+						find/part imagetext "GIF89" 6 [
+							attempt [
+								if block? image: load link [image: copy blank-img]
+							]
+							print 'GIF
+						]
+						true [
+							image: copy blank-img
+							print 'Unknown
+						]
+					]
+
 					append image-cache user-id
 					repend/only image-cache [image name]
+
 					repend icon-bar [image name]
 					repend/only icon-bar ['set-face 'chat-area rejoin ["@" replace/all name " " "" " "] 'focus 'chat-area]
 				]
@@ -488,7 +635,12 @@ speak: func [message /local err result][
 ]
 
 read-messages: func [cnt][
-	to string! write read-target-url compose/deep copy/deep [
+	probe compose/deep compose/deep copy/deep [
+		POST
+		[(header)]
+		(rejoin ["since=0&mode=Messages&msgCount=" cnt "&fkey=" fkey])
+	]
+	to string! write read-target-url compose/deep compose/deep copy/deep [
 		POST
 		[(header)]
 		(rejoin ["since=0&mode=Messages&msgCount=" cnt "&fkey=" fkey])
@@ -578,13 +730,18 @@ view compose/deep [
 			tb: tool-bar [(tool-bar-data)] on-action [print arg]
 			hpanel [
 				vpanel [
-					hpanel [
-						time-fld: field ""
-						update-fld: field ""
+
+					bot-commands: text-table 200x50 [
+						"Command" #1 40 "Purpose" #2 100] [
+						["help" "returns a list of bot comands"]
+						["delete" "deletes the last response made by bot"]
+						["introduce me" "says something known about me stored on system"]
+					] on-action [
+						set-face chat-area ajoin ["@" get-face botbtn " " first get-face/field face 'row]
+						focus chat-area
 					]
-					box white
 				]
-				chat-area: area "" 300x30 options [min-hint: 500x30 detab: true]
+				chat-area: area "" 300x350 options [min-hint: 500x30 detab: true]
 				on-key [
 					do-actor/style face 'on-key arg 'area
 					if all [
@@ -596,180 +753,197 @@ view compose/deep [
 
 
 				]
-				htight 2 [
-					sendbtn: button "send" on-action [
-						use [txt] [
-							txt: get-face chat-area
-							if all [
-								found? txt
-								not empty? txt
-							] [
-								if txt <> last-message [
-									speak txt
+				scroll-panel [
+					htight 2 [
+						time-fld: field ""
+						update-fld: field ""
 
-									set-face chat-area copy ""
-									set 'last-message txt
+						sendbtn: button "send" on-action [
+							use [txt] [
+								txt: get-face chat-area
+								if all [
+									found? txt
+									not empty? txt
+								] [
+									if txt <> last-message [
+										speak txt
+
+										set-face chat-area copy ""
+										set 'last-message txt
+									]
 								]
 							]
-						]
-						;= update toolbar
+							;= update toolbar
 
 
-						if exists? %toolbar.r3 [
-							inf: info? %toolbar.r3
-							?? tool-bar-inf
-							?? inf
-
-							if inf/date > tool-bar-inf [
-								print "Updating images"
-								append clear head tool-bar-data load %toolbar.r3
-								set 'tool-bar-inf inf/date
+							if exists? %toolbar.r3 [
+								inf: info? %toolbar.r3
 								?? tool-bar-inf
-								show-now tb
-							]
-						]
+								?? inf
 
-						len: length? system/contexts/user/all-messages
-						; clear system/contexts/user/all-messages
-						print ["loading messages at " now]
-						foreach msg read storage-dir [
-
-							timestamp:
-							person-id:
-							message-id:
-							parent-id: 0
-							user-name: make string! 20
-
-							message-rule: [
-								<event_type> quote 1 |
-								<time_stamp> set timestamp integer! |
-								<content> set content string! |
-								<id> integer! |
-								<user_id> set person-id integer! |
-								<user_name> set user-name string! |
-								<room_id> integer! |
-								<room_name> string! |
-								<message_id> set message-id integer! |
-								<parent_id> set parent-id integer! |
-								<show_parent> logic! |
-								tag! skip |
-								end
+								if inf/date > tool-bar-inf [
+									print "Updating images"
+									append clear head tool-bar-data load %toolbar.r3
+									set 'tool-bar-inf inf/date
+									?? tool-bar-inf
+									show-now tb
+								]
 							]
 
-							if not dir? msg [
-								msg: load join storage-dir msg
-								content: none
-								user-name: none
-								message-id: 0
-								either parse msg [some message-rule] [
-									content: trim decode-xml content
-									; ?? message-id
-									if message-id > lastmessage-no [
-										set 'lastmessage-no message-id
-										repend/only system/contexts/user/all-messages [person-id message-id user-name content timestamp]
-									]
-								] [print ["failed parse" msg]]
+							len: length? system/contexts/user/all-messages
+							; clear system/contexts/user/all-messages
+							print ["loading messages at " now]
+							foreach msg read storage-dir [
+
+								timestamp:
+								person-id:
+								message-id:
+								parent-id: 0
+								user-name: make string! 20
+
+								message-rule: [
+									<event_type> quote 1 |
+									<time_stamp> set timestamp integer! |
+									<content> set content string! |
+									<id> integer! |
+									<user_id> set person-id integer! |
+									<user_name> set user-name string! |
+									<room_id> integer! |
+									<room_name> string! |
+									<message_id> set message-id integer! |
+									<parent_id> set parent-id integer! |
+									<show_parent> logic! |
+									tag! skip |
+									end
+								]
+
+								if not dir? msg [
+									msg: load join storage-dir msg
+									content: none
+									user-name: none
+									message-id: 0
+									either parse msg [some message-rule] [
+										content: trim decode-xml content
+										; ?? message-id
+										if message-id > lastmessage-no [
+											set 'lastmessage-no message-id
+											repend/only system/contexts/user/all-messages [person-id message-id user-name content timestamp]
+										]
+									] [print ["failed parse" msg]]
+								]
 							]
-						]
 
-						data: copy/deep system/contexts/user/all-messages
-						foreach msg data [
-							msg/5: from-now utc-to-local unix-to-utc msg/5
-						]
-						; probe data
-
-						SET-FACE/FIELD window-message-table data 'data
-						set-face window-update-fld form now/time
-
-						?? len
-						probe length? system/contexts/user/all-messages
-
-						if all [
-							value? 'len
-							integer? len
-							len <> length? system/contexts/user/all-messages
-						] [
-							set-face message-table/names/scr 100%
-							do-face message-table/names/scr
-						]
-						show-now [window-message-table window-update-fld]
-
-					]
-					button "Last Msg" on-action [
-						set-face chat-area last-message
-					]
-					button "Clear" gold on-action [
-						set-face chat-area ""
-					]
-					button "RebolBot" on-action [
-						set-face chat-area join "@rebolbot " get-face chat-area
-						focus chat-area
-					]
-					button "Fetch Msgs" green on-action [
-						forever [
-							update-messages
-							; update-icons referrer-url
 							data: copy/deep system/contexts/user/all-messages
 							foreach msg data [
 								msg/5: from-now utc-to-local unix-to-utc msg/5
 							]
+							; probe data
 
-							set-face update-fld form now
-							SET-FACE/FIELD message-table data 'data
-							set-face message-table/names/scr 100%
-							print now
-							wait wait-period
+							SET-FACE/FIELD window-message-table data 'data
+							set-face window-update-fld form now/time
+
+							?? len
+							probe length? system/contexts/user/all-messages
+
+							if all [
+								value? 'len
+								integer? len
+								len <> length? system/contexts/user/all-messages
+							] [
+								set-face message-table/names/scr 100%
+								do-face message-table/names/scr
+							]
+							show-now [window-message-table window-update-fld]
+
 						]
+						button "Last Msg" on-action [
+							set-face chat-area last-message
+						]
+						button "Clear" gold on-action [
+							set-face chat-area ""
+						]
+						botbtn: button "RebolBot" on-action [
+							set-face chat-area join "@rebolbot " get-face chat-area
+							focus chat-area
+						]
+						button "Fetch Msgs" green on-action [
+							forever [
+								update-messages
+								; update-icons referrer-url
+								data: copy/deep system/contexts/user/all-messages
+								foreach msg data [
+									msg/5: from-now utc-to-local unix-to-utc msg/5
+								]
 
-					]
-					button "Code" yello on-action [
-						use [txt][
-							if not empty? txt: get-face chat-area [
-								; insert 4 spaces infront of each line
-								trim/head/tail txt
-								replace/all txt "^/" "^/    "
-								insert head txt "    "
-								set-face chat-area txt
+								set-face update-fld form now
+								SET-FACE/FIELD message-table data 'data
+								set-face message-table/names/scr 100%
+								print now
+								wait wait-period
+							]
+
+						]
+						button "Code" yello on-action [
+							use [txt][
+								if not empty? txt: get-face chat-area [
+									; insert 4 spaces infront of each line
+									trim/head/tail txt
+									replace/all txt "^/" "^/    "
+									insert head txt "    "
+									set-face chat-area txt
+								]
 							]
 						]
-					]
-					button "Stop" red on-action [
-						close-window face
-						halt
-					]
-					button "Settings" on-action [
-						view [
-							vpanel [
-								title "Settings"
-								hpanel [
-									label "Fetch message no: " nom-fld: field "" 50 on-action [
-										attempt [
-											set 'no-of-messages to integer! arg
-											close-window face
+						button "Stop" red on-action [
+							close-window face
+							halt
+						]
+						button "Settings" on-action [
+							view [
+								vpanel [
+									title "Settings"
+									hpanel [
+										label "Initial Fetch" init-fetchfld: field 30
+										label "Poll Fetch no: " nom-fld: field 30 on-action [
+											attempt [
+												set 'no-of-messages to integer! arg
+												close-window face
+											]
 										]
+										label "Poll Period (sec)" pollfld: field 30
 									]
-									pad
+									hpanel [
+										button "Cancel" red on-action [close-window face]
+									]
+									bar
+									hpanel 2 [
+										label "fkey" fk-fld: field
+										label "cookie" cookie-area: area
+									] options [black border-size: [1x1 1x1]]
+									button "Save" on-action [
+										probe get-face fk-fld
+										probe get-face cookie-area
+										tobj: make object! [fkey: bot-cookie: none]
+										tobj/fkey: get-face fk-fld
+										tobj/bot-cookie: trim/head/tail get-face cookie-area
+										save %rsoconfig.r3 tobj
+										?? tobj
+										close-window face
+										alert "Saved new config"
+									]
 								]
-								hpanel [
-									button "Cancel" red on-action [close-window face]
+								when [enter] on-action [
+									set-face nom-fld no-of-messages
+									set-face fk-fld system/contexts/user/fkey
+									set-face cookie-area system/contexts/user/bot-cookie
 								]
-								bar
-								hpanel 2 [
-									label "fkey" fk-fld: field
-									label "cookie" cookie-area: area
-								] options [black border-size: [1x1 1x1]]
-							]
-							when [load] on-action [
-								set-face nom-fld no-of-messages
-								set-face fk-fld fkey
-								set-face cookie-area bot-cookie
 							]
 						]
-					]
-				] options [max-hint: 200x100]
+					] ; options [max-hint: 200x100]
 
+				]
 				box 60x30
-			] options [min-hint: 300x80 max-hint: 1200x110]
+			] options [min-hint: 300x100 max-hint: 1200x110]
 		]
 		scroll-panell [
 			; holds icons and tagged messages
@@ -786,9 +960,6 @@ view compose/deep [
 			show-now time-fld
 		]
 	]
-
-	;]
-	;]
 ]
 
 
