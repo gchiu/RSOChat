@@ -3,7 +3,7 @@ Rebol [
 	author: "Graham Chiu"
 	rights: "BSD"
 	date: [17-June-2013 19-June-2013 21-June-2013 27-Apr-2014]
-	version: 0.0.91
+	version: 0.0.92
 	instructions: {
             use the r3-view.exe client from Saphirion for windows currently at http://development.saphirion.com/resources/r3-view.exe
             and then just run this client
@@ -11,9 +11,6 @@ Rebol [
             do %rsochat.r3
 
             and then use the "Start" button to start grabbing messages
-
-            ;This R2 script tickles the gui to grab messages
-            ;tickle: does [ p: open/direct/lines tcp://localhost:8000 forever [ insert p "read" pick p 1 wait 0:00:5 ]]
 
           }
 	history: {
@@ -23,6 +20,7 @@ Rebol [
 	22-April-2014 - added a facebook image check - untested
 			- checking for posting while not logged in
 	27-April-2014 custom prot-http to grab images, and redirects.  Grabs cookies now and fkey
+		0.0.92 added most of the bot commands as text-table
           }
 
 ]
@@ -731,13 +729,59 @@ view compose/deep [
 			hpanel [
 				vpanel [
 
-					bot-commands: text-table 200x50 [
-						"Command" #1 40 "Purpose" #2 100] [
+					bot-commands: text-table 200x50 ["Command" #1 40 "Purpose" #2 100]
+					[
 						["help" "returns a list of bot comands"]
 						["delete" "deletes the last response made by bot"]
 						["introduce me" "says something known about me stored on system"]
+						["version" "current version of bot"]
+						["cc nn" "Curecode ticket no to display"]
+						["fetch nn" "Fetches stored JSON message by its ID"]
+						["what is the meaning of life?" "Asks purpose of life"]
+						["Greet" "Sends a greeting to the bot"]
+						["Save my details url!" "Save my details as url with timezone"]
+						["Search" "Search by key"]
+						["Tweet" "Tweet as rebolbot"]
+						["Show links by " "Show links by user"]
+						["Shut Up" "Close bot down - emergency"]
+						["Source" "Source of Rebol function"]
+						["Save key [word! |string!] description url!" "Saves key, description and url"]
+						["Remove key" "Removes named key"]
+						["Find description" "Finds named key"]
+						["What is the time in GMT?" "Time in GMT"]
+						["Who do you know?" "Returns a list of known users"]
+						["present?" "Who is currently online"]
+						["Who is " "Who is the named user"]
 					] on-action [
-						set-face chat-area ajoin ["@" get-face botbtn " " first get-face/field face 'row]
+						switch cmd: pick get-face/field face 'row 1 [
+							"Save my details url!" [
+								cmd: copy ""
+								view/modal [
+									hpanel [
+										label "URL: " urlfld: field 200 on-action [
+											attempt [
+												all [
+													url: load get-face urlfld
+													url! = type? url
+													set 'cmd ajoin ["Save my details " url " " now/zone]
+												]
+											]
+											close-window face
+										]
+									]
+									when [enter] on-action [focus urlfld]
+								]
+							]
+							"Greet" [
+								view/modal [
+									text-list ["Hi" "Hello" "Goodbye" "morning" "afternoon" "evening" "night"] on-action [
+										set 'cmd form pick pick get-face/field face 'table-data arg 1
+										close-window face
+									]
+								]
+							]
+						]
+						set-face chat-area ajoin ["@" get-face botbtn " " cmd]
 						focus chat-area
 					]
 				]
