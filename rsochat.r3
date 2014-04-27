@@ -21,6 +21,7 @@ Rebol [
 			- checking for posting while not logged in
 	27-April-2014 custom prot-http to grab images, and redirects.  Grabs cookies now and fkey
 		0.0.92 added most of the bot commands as text-table
+		0.0.93 added delete message and edit message functionality
           }
 
 ]
@@ -129,7 +130,8 @@ chat-target-url: rejoin write-chat-block: [so-chat-url 'chats "/" room-id "/" 'm
 referrer-url: rejoin [so-chat-url 'rooms "/" room-id "/" room-descriptor]
 html-url: rejoin [referrer-url "?highlights=false"]
 read-target-url: rejoin [so-chat-url 'chats "/" room-id "/" 'events]
-delete-url: [so-chat-url 'messages "/" (parent-id) "/" 'delete]
+delete-url: [so-chat-url 'messages "/" parent-id "/" 'delete]
+edit-url: [so-chat-url 'messages "/" parent-id]
 
 
 ; perhaps not all of this header is required
@@ -617,6 +619,52 @@ url-encode: use [ch mk][
 		][to-string text][""]
 	]
 ]
+
+; delete-url: [so-chat-url 'messages "/" parent-id "/" 'delete]
+
+delete-message: func [parent-id [integer!]
+	/local err result
+][
+	bind delete-url 'parent-id
+	if error? err: try [
+		result: to string! write rejoin delete-url compose/deep compose/deep copy/deep [
+			POST
+			[(header)]
+			(rejoin ["fkey=" fkey])
+		]
+		alert result
+	][
+		if find err/arg1 "Server error: HTTP/1.1 404 Not Found" [
+			alert "You don't seem to be logged in .. check your credentials again"
+		]
+	]
+]
+revise-message: func [parent-id [integer!] message face
+	/local err result
+][
+	result: err: none
+	bind edit-url 'parent-id
+	if error? err: try [
+		result: to string! write rejoin edit-url compose/deep compose/deep copy/deep [
+			POST
+			[(header)]
+			(rejoin ["text=" url-encode message "&fkey=" fkey])
+		]
+	][
+		if find err/arg1 "Server error: HTTP/1.1 404 Not Found" [
+			alert "You don't seem to be logged in .. check your credentials again"
+		]
+	]
+	if result [
+		either result = {"ok"} [
+			set-face face copy ""
+			update-face face
+		][
+			alert result
+		]
+	]
+]
+
 speak: func [message /local err result][
 	if message = last-message [exit]
 	if error? err: try [
@@ -938,6 +986,30 @@ view compose/deep [
 								]
 							]
 						]
+						button "Delete Message" red on-action [
+							parent-id: none
+							if all [
+								parse get-face chat-area [":" copy parent-id to end]
+								trim parent-id
+								attempt [parent-id: load parent-id]
+								integer? parent-id
+							][
+								delete-message parent-id
+								set-face chat-area copy ""
+							]
+						]
+						button "Revise Message" on-action [
+							parent-id: none
+							if all [
+								parse get-face chat-area [":" copy parent-id thru " " copy msg to end]
+								trim parent-id
+								attempt [parent-id: load parent-id]
+								integer? parent-id
+							][
+								revise-message parent-id msg chat-area
+							]
+						]
+
 						button "Stop" red on-action [
 							close-window face
 							halt
@@ -1005,5 +1077,3 @@ view compose/deep [
 		]
 	]
 ]
-
-
