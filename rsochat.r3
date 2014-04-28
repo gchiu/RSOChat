@@ -1,9 +1,10 @@
 Rebol [
 	title: "Rebol Stack Overflow Chat Client"
+	File: %rsochat.r3
 	author: "Graham Chiu"
 	rights: "BSD"
 	date: [17-June-2013 19-June-2013 21-June-2013 27-Apr-2014]
-	version: 0.0.92
+	version: 0.0.93
 	instructions: {
             use the r3-view.exe client from Saphirion for windows currently at http://development.saphirion.com/resources/r3-view.exe
             and then just run this client
@@ -24,6 +25,17 @@ Rebol [
 		0.0.93 added delete message and edit message functionality
           }
 
+]
+
+logfile: %events.reb
+if not exists? logfile [write logfile ""]
+debug: true
+
+log: func [event][
+;	if debug [
+		print ["logging event" event]
+		write/append logfile join reform [now/time event] newline
+;	]
 ]
 
 if not value? 'to-text [
@@ -381,9 +393,6 @@ grab-icons: func [url
 				]
 				if is-image? [
 					?? image-url
-					link: read to-url image-url
-
-					comment {
 					if error? err: try [
 						link: read to-url image-url
 					][
@@ -393,7 +402,6 @@ grab-icons: func [url
 							link: read err/arg3
 						]
 					]
-}
 					; probe to-string copy/part link 10
 					; examine the binary to see what type of image it is - can't rely on extension
 					imagetext: to string! copy/part link 20
@@ -847,9 +855,10 @@ view compose/deep [
 				]
 				scroll-panel [
 					htight 2 [
+						; label "Started: " 
 						time-fld: field ""
+						; label "Now: " 
 						update-fld: field ""
-
 						sendbtn: button "send" on-action [
 							use [txt] [
 								txt: get-face chat-area
@@ -857,10 +866,9 @@ view compose/deep [
 									found? txt
 									not empty? txt
 								] [
+									set-face chat-area copy ""
 									if txt <> last-message [
 										speak txt
-
-										set-face chat-area copy ""
 										set 'last-message txt
 									]
 								]
@@ -960,17 +968,23 @@ view compose/deep [
 						]
 						button "Fetch Msgs" green on-action [
 							forever [
+								log "update-messages"
 								update-messages
 								; update-icons referrer-url
 								data: copy/deep system/contexts/user/all-messages
+								log "update times on text-table data"
 								foreach msg data [
 									msg/5: from-now utc-to-local unix-to-utc msg/5
 								]
-
+								log "update update-fld with time"
 								set-face update-fld form now
+								log "update message-table"
 								SET-FACE/FIELD message-table data 'data
+								log "update scroller"
 								set-face message-table/names/scr 100%
+								log "print now"
 								print now
+								log "waiting..."
 								wait wait-period
 							]
 
