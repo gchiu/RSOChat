@@ -3,8 +3,8 @@ Rebol [
 	File: %rsochat.r3
 	author: "Graham Chiu"
 	rights: "BSD"
-	date: [17-June-2013 19-June-2013 21-June-2013 27-Apr-2014]
-	version: 0.0.93
+	date: [17-June-2013 19-June-2013 21-June-2013 1-May-2014]
+	version: 0.0.94
 	instructions: {
             use the r3-view.exe client from Saphirion for windows currently at http://development.saphirion.com/resources/r3-view.exe
             and then just run this client
@@ -23,6 +23,7 @@ Rebol [
 	27-April-2014 custom prot-http to grab images, and redirects.  Grabs cookies now and fkey
 		0.0.92 added most of the bot commands as text-table
 		0.0.93 added delete message and edit message functionality
+	1-May-2014 added some more error trapping
           }
 
 ]
@@ -32,10 +33,10 @@ if not exists? logfile [write logfile ""]
 debug: true
 
 log: func [event][
-;	if debug [
-		print ["logging event" event]
-		write/append logfile join reform [now/time event] newline
-;	]
+	;	if debug [
+	print ["logging event" event]
+	write/append logfile join reform [now/time event] newline
+	;	]
 ]
 
 if not value? 'to-text [
@@ -729,6 +730,7 @@ update-messages: func [] [
 				?? message-id
 				if all [
 					integer? message-id
+					message-id > 0
 					not exists? join storage-dir message-no
 				][
 					write join storage-dir message-no msg
@@ -969,7 +971,11 @@ view compose/deep [
 						button "Fetch Msgs" green on-action [
 							forever [
 								log "update-messages"
-								update-messages
+								if error? err: try [
+									update-messages
+								][
+									print mold err
+								]
 								; update-icons referrer-url
 								data: copy/deep system/contexts/user/all-messages
 								log "update times on text-table data"
