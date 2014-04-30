@@ -4,7 +4,7 @@ Rebol [
 	author: "Graham Chiu"
 	rights: "BSD"
 	date: [17-June-2013 19-June-2013 21-June-2013 1-May-2014]
-	version: 0.0.94
+	version: 0.0.95
 	instructions: {
             use the r3-view.exe client from Saphirion for windows currently at http://development.saphirion.com/resources/r3-view.exe
             and then just run this client
@@ -32,11 +32,11 @@ logfile: %events.reb
 if not exists? logfile [write logfile ""]
 debug: true
 
-log: func [event][
-	;	if debug [
-	print ["logging event" event]
-	write/append logfile join reform [now/time event] newline
-	;	]
+rsolog: func [event][
+	if debug [
+		print ["logging event" event]
+		write/append logfile join reform [now/time event] newline
+	]
 ]
 
 if not value? 'to-text [
@@ -970,7 +970,7 @@ view compose/deep [
 						]
 						button "Fetch Msgs" green on-action [
 							forever [
-								log "update-messages"
+								rsolog "update-messages"
 								if error? err: try [
 									update-messages
 								][
@@ -978,19 +978,19 @@ view compose/deep [
 								]
 								; update-icons referrer-url
 								data: copy/deep system/contexts/user/all-messages
-								log "update times on text-table data"
+								rsolog "update times on text-table data"
 								foreach msg data [
 									msg/5: from-now utc-to-local unix-to-utc msg/5
 								]
-								log "update update-fld with time"
+								rsolog "update update-fld with time"
 								set-face update-fld form now
-								log "update message-table"
+								rsolog "update message-table"
 								SET-FACE/FIELD message-table data 'data
-								log "update scroller"
+								rsolog "update scroller"
 								set-face message-table/names/scr 100%
-								log "print now"
+								rsolog "print now"
 								print now
-								log "waiting..."
+								rsolog "waiting..."
 								wait wait-period
 							]
 
