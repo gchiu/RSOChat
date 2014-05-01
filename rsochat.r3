@@ -25,67 +25,11 @@ Rebol [
 		0.0.93 added delete message and edit message functionality
 	1-May-2014 added some more error trapping
           }
-
-]
-
-logfile: %events.reb
-if not exists? logfile [write logfile ""]
-debug: true
-
-rsolog: func [event][
-	if debug [
-		print ["logging event" event]
-		write/append logfile join reform [now/time event] newline
+	needs: [
+		https://raw.githubusercontent.com/gchiu/RSOChat/master/modules.r3
+		%r3-gui.r3 %altjson.r3 %altxml.r3 %altwebform.r3 %prot-http.r3
 	]
 ]
-
-rsolog "fetching r3-gui.r3"
-if not value? 'to-text [
-	do funct [] [
-		either exists? %r3-gui.r3 [
-			do %r3-gui.r3
-		][
-			url: body-of :load-gui
-			either parse url [thru 'try set url block! to end][
-				parse url [word! set url url!]
-				write %r3-gui.r3 read url
-				do %r3-gui.r3
-			][
-				load-gui
-			]
-		]
-	]
-]
-
-
-rsolog "fetching altjson"
-if not value? 'load-json [
-	if not exists? %altjson.r3 [
-		write %altjson.r3 read https://raw.githubusercontent.com/gchiu/RSOChat/master/altjson.r3
-	]
-	do %altjson.r3
-]
-
-rsolog "fetching altxml"
-if not value? 'decode-xml [
-	if not exists? %altxml.r3 [
-		write %altxml.r3 read https://raw.githubusercontent.com/gchiu/RSOChat/master/altxml.r3
-	]
-	do %altxml.r3
-]
-
-
-rsolog "fetching altwebform"
-if not value? 'url-decode [
-	if not exists? %altwebform.r3 [
-		write %altwebform.r3 read http://reb4.me/r3/altwebform.r
-	]
-	do %altwebform.r3
-]
-
-; load modified http protocol to return the info object on failed http redirect
-rsolog "loading modified prot-http.r3"
-do https://raw.githubusercontent.com/gchiu/Rebol3/master/protocols/prot-http.r3
 
 login2so: func [email [email!] password [string!] chat-page [url!]
 	/local fkey root loginpage cookiejar result err configobj
