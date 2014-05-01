@@ -4,7 +4,7 @@ Rebol [
 	author: "Graham Chiu"
 	rights: "BSD"
 	date: [17-June-2013 19-June-2013 21-June-2013 1-May-2014]
-	version: 0.0.95
+	version: 0.0.96
 	instructions: {
             use the r3-view.exe client from Saphirion for windows currently at http://development.saphirion.com/resources/r3-view.exe
             and then just run this client
@@ -39,6 +39,7 @@ rsolog: func [event][
 	]
 ]
 
+rsolog "fetching r3-gui.r3"
 if not value? 'to-text [
 	do funct [] [
 		either exists? %r3-gui.r3 [
@@ -56,6 +57,8 @@ if not value? 'to-text [
 	]
 ]
 
+
+rsolog "fetching altjson"
 if not value? 'load-json [
 	if not exists? %altjson.r3 [
 		write %altjson.r3 read https://raw.github.com/gchiu/RSOChat/master/altjson.r3
@@ -63,6 +66,7 @@ if not value? 'load-json [
 	do %altjson.r3
 ]
 
+rsolog "fetching altxml"
 if not value? 'decode-xml [
 	if not exists? %altxml.r3 [
 		write %altxml.r3 read https://raw.github.com/gchiu/RSOChat/master/altxml.r3
@@ -70,6 +74,8 @@ if not value? 'decode-xml [
 	do %altxml.r3
 ]
 
+
+rsolog "fetching altwebform"
 if not value? 'url-decode [
 	if not exists? %altwebform.r3 [
 		write %altwebform.r3 read http://reb4.me/r3/altwebform.r
@@ -78,7 +84,7 @@ if not value? 'url-decode [
 ]
 
 ; load modified http protocol to return the info object on failed http redirect
-print "loading modified prot-http.r3"
+rsolog "loading modified prot-http.r3"
 do https://raw.githubusercontent.com/gchiu/Rebol3/master/protocols/prot-http.r3
 
 login2so: func [email [email!] password [string!] chat-page [url!]
