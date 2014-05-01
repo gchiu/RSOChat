@@ -4,7 +4,7 @@ Rebol [
 	author: "Graham Chiu"
 	rights: "BSD"
 	date: [17-June-2013 19-June-2013 21-June-2013 1-May-2014]
-	version: 0.0.96
+	version: 0.0.97
 	instructions: {
             use the r3-view.exe client from Saphirion for windows currently at http://development.saphirion.com/resources/r3-view.exe
             and then just run this client
@@ -61,7 +61,7 @@ if not value? 'to-text [
 rsolog "fetching altjson"
 if not value? 'load-json [
 	if not exists? %altjson.r3 [
-		write %altjson.r3 read https://raw.github.com/gchiu/RSOChat/master/altjson.r3
+		write %altjson.r3 read https://raw.githubusercontent.com/gchiu/RSOChat/master/altjson.r3
 	]
 	do %altjson.r3
 ]
@@ -69,7 +69,7 @@ if not value? 'load-json [
 rsolog "fetching altxml"
 if not value? 'decode-xml [
 	if not exists? %altxml.r3 [
-		write %altxml.r3 read https://raw.github.com/gchiu/RSOChat/master/altxml.r3
+		write %altxml.r3 read https://raw.githubusercontent.com/gchiu/RSOChat/master/altxml.r3
 	]
 	do %altxml.r3
 ]
