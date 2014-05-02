@@ -53,5 +53,3 @@ foreach [module test][
 		do module
 	]
 ]
-
-http://reb4.me/r3/altwebform
