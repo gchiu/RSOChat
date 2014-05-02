@@ -1,6 +1,6 @@
 Rebol [
 	Title: "RSO Chat Modules"
-	Date:  1-May-2014
+	Date: 1-May-2014
 	Author: "Christopher Ross-Gill"
 ]
 
@@ -19,8 +19,8 @@ foreach [module test][
 	%r3-gui.r3 to-text
 	%altjson.r3 load-json
 	%altxml.r3 load-xml
-	%altwebform.r3 load-webform
-	%prot-http.r3 read ; need better test word?
+	%altwebform.r load-webform
+	%prot-http.r3 idate-to-idate
 ][
 	unless value? :test [
 		unless exists? module [
@@ -38,7 +38,7 @@ foreach [module test][
 					]
 				]
 
-				%altwebform.r3 [
+				%altwebform.r  [
 					write module read join http://reb4.me/r3/ module
 				]
 
@@ -53,3 +53,5 @@ foreach [module test][
 		do module
 	]
 ]
+
+http://reb4.me/r3/altwebform
