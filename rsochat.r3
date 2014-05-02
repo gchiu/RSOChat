@@ -15,19 +15,66 @@ Rebol [
 
           }
 	history: {
-            17-June-2013 first attempt at using text-table
-            19-June-2013 using a server port to simulate a timer .. and gets a MS Visual C++ runtime error :(  So, back to using a forever loop with a wait
-            21-June-2013 using a closure for the mini-http function appears to delay the crashes, removed unused code
-	22-April-2014 - added a facebook image check - untested
-			- checking for posting while not logged in
-	27-April-2014 custom prot-http to grab images, and redirects.  Grabs cookies now and fkey
-		0.0.92 added most of the bot commands as text-table
-		0.0.93 added delete message and edit message functionality
-	1-May-2014 added some more error trapping
+                17-June-2013 first attempt at using text-table
+                19-June-2013 using a server port to simulate a timer .. and gets a MS Visual C++ runtime error :(  So, back to using a forever loop with a wait
+                21-June-2013 using a closure for the mini-http function appears to delay the crashes, removed unused code
+                22-April-2014 - added a facebook image check - untested
+            - checking for posting while not logged in
+                27-April-2014 custom prot-http to grab images, and redirects.  Grabs cookies now and fkey
+                0.0.92 added most of the bot commands as text-table
+                0.0.93 added delete message and edit message functionality
+                1-May-2014 added some more error trapping
+                2-May-2014 removed 'needs header .. odd errors occur
           }
-	needs: [
-		https://raw.githubusercontent.com/gchiu/RSOChat/master/modules.r3
-		%r3-gui.r3 %altjson.r3 %altxml.r3 %altwebform.r3 %prot-http.r3
+]
+
+logfile: %events.reb
+if not exists? logfile [write logfile ""]
+debug: true
+
+do rsolog: func [event][
+	if debug [
+		print ["logging event" event]
+		write/append logfile join reform [now/time event] newline
+		event
+	]
+] "starting .. "
+
+foreach [module test][
+	%prot-http.r3 idate-to-idate
+	%r3-gui.r3 to-text
+	%altjson.r3 load-json
+	%altxml.r3 load-xml
+	%altwebform.r load-webform
+][
+	unless value? :test [
+		unless exists? module [
+			rsolog join "fetching " module
+
+			switch/default module [
+				%r3-gui.r3 [
+					test: body-of :load-gui
+					either parse url [thru 'try set test block! to end][
+						parse test [word! set test url!]
+						write module read test
+						do rsolog module
+					][
+						load-gui
+					]
+				]
+				%altwebform.r [
+					write module read join http://reb4.me/r3/ module
+				]
+
+				%prot-http.r3 [
+					write module read rsolog join https://raw.githubusercontent.com/gchiu/Rebol3/master/protocols/ module
+				]
+			][
+				write module read rsolog join https://raw.githubusercontent.com/gchiu/RSOChat/master/ module
+			]
+		]
+
+		do rsolog module
 	]
 ]
 
@@ -67,6 +114,7 @@ login2so: func [email [email!] password [string!] chat-page [url!]
 	]
 	configobj
 ]
+
 
 no-of-messages: 20
 lastmessage-no: 14874139 ; 10025800
@@ -110,7 +158,6 @@ header: [
 	Content-Type: "application/x-www-form-urlencoded"
 	cookie: (bot-cookie)
 ]
-
 if not exists? %rsoconfig.r3 [
 	view/modal [
 		vgroup [
@@ -301,6 +348,7 @@ update-icons: func [url
 
 blank-img: make image! 128x128
 
+
 grab-icons: func [url
 	/local icon-bar name image-url image link is-image? page gravatar-rule user-id
 	lastimage
@@ -406,12 +454,10 @@ fetch-messages: funct [url [url!] header [block!] from [integer!] no-of-messages
 		header
 		(payload)
 	]
-
 ]
 
 
 ; mini-http is a minimalistic http implementation
-
 
 mini-http: closure [url [url!] method [word! string!] code [string!] timeout [integer!]
 	/callback cb
@@ -530,6 +576,7 @@ $code}
 	port/awake: func [event /local result messages content message-no message-id data json user-name message-rule parent-id person-id timestamp] f-body
 	open port
 ]
+
 raw-read: func [message-id target [url!]
 	/local result err
 ][
@@ -565,7 +612,6 @@ percent-encode: func [char [char!]][
 	]
 	char
 ]
-
 url-encode: use [ch mk][
 	ch: charset ["-." #"0" - #"9" #"A" - #"Z" #"-" #"a" - #"z" #"~"]
 	func [text [any-string!]][
@@ -578,9 +624,6 @@ url-encode: use [ch mk][
 		][to-string text][""]
 	]
 ]
-
-; delete-url: [so-chat-url 'messages "/" parent-id "/" 'delete]
-
 delete-message: func [parent-id [integer!]
 	/local err result
 ][
@@ -624,10 +667,10 @@ revise-message: func [parent-id [integer!] message face
 	]
 ]
 
-speak: func [message /local err result][
+speak: func [message /local err][
 	if message = last-message [exit]
 	if error? err: try [
-		result: to string! write chat-target-url compose/deep compose/deep copy/deep [
+		write chat-target-url compose/deep compose/deep copy/deep [
 			POST
 			[(header)]
 			(rejoin ["text=" url-encode message "&fkey=" fkey])
@@ -667,7 +710,8 @@ message-rule: [
 	end
 ]
 
-update-messages: func [] [
+update-messages: func [/local result
+][
 	attempt [
 		result: load-json/flat read-messages no-of-messages
 		?? result
@@ -695,6 +739,7 @@ update-messages: func [] [
 	]
 ]
 
+
 tool-bar-inf: now
 
 either exists? %toolbar.r3 [
@@ -709,8 +754,6 @@ either exists? %toolbar.r3 [
 ]
 
 view compose/deep [
-	;tab-box [
-	;    "Rebol/Red" [
 	hpanel [
 		vpanel [
 			message-table: text-table 200x400 ["Username" #3 150 "Chat" #4 900 "Time" #5 10]
@@ -1047,3 +1090,5 @@ view compose/deep [
 		]
 	]
 ]
+
+
