@@ -4,7 +4,7 @@ Rebol [
 	author: "Graham Chiu"
 	rights: "BSD"
 	date: [17-June-2013 19-June-2013 21-June-2013 1-May-2014]
-	version: 0.0.97
+	version: 0.0.98
 	instructions: {
             use the r3-view.exe client from Saphirion for windows currently at http://development.saphirion.com/resources/r3-view.exe
             and then just run this client
@@ -25,6 +25,7 @@ Rebol [
                 0.0.93 added delete message and edit message functionality
                 1-May-2014 added some more error trapping
                 2-May-2014 removed 'needs header .. odd errors occur
+                3-May-2014 0.0.98 rearranged layout a little, added a toggle to fetch messages.  Icon bar is removed when toggled off but not replaced yet when restarted
           }
 ]
 
@@ -36,8 +37,8 @@ do rsolog: func [event][
 	if debug [
 		print ["logging event" event]
 		write/append logfile join reform [now/time event] newline
-		event
 	]
+	event
 ] "starting .. "
 
 foreach [module test][
@@ -776,11 +777,16 @@ view compose/deep [
 					]
 				]
 			]
-			tb: tool-bar [(tool-bar-data)] on-action [print arg]
-			hpanel [
+			content-bar: hpanel [
+				tb: tool-bar [(tool-bar-data)] on-action [print arg]
+			]
+			hpanel 3 [
+				head-bar "Bot Commands"
+				head-bar "Chat Area"
+				head-bar "Chat Functions"
 				vpanel [
 
-					bot-commands: text-table 200x50 ["Command" #1 40 "Purpose" #2 100]
+					bot-commands: text-table 200x100 ["Command" #1 40 "Purpose" #2 100]
 					[
 						["help" "returns a list of bot comands"]
 						["delete" "deletes the last response made by bot"]
@@ -836,7 +842,7 @@ view compose/deep [
 						focus chat-area
 					]
 				]
-				chat-area: area "" 300x350 options [min-hint: 500x30 detab: true]
+				chat-area: area "" 600x90 options [min-hint: 750x50 detab: true]
 				on-key [
 					do-actor/style face 'on-key arg 'area
 					if all [
@@ -850,11 +856,9 @@ view compose/deep [
 				]
 				scroll-panel [
 					htight 2 [
-						; label "Started: " 
 						time-fld: field ""
-						; label "Now: " 
 						update-fld: field ""
-						sendbtn: button "send" on-action [
+						sendbtn: button "SEND" on-action [
 							use [txt] [
 								txt: get-face chat-area
 								if all [
@@ -869,8 +873,6 @@ view compose/deep [
 								]
 							]
 							;= update toolbar
-
-
 							if exists? %toolbar.r3 [
 								inf: info? %toolbar.r3
 								?? tool-bar-inf
@@ -950,6 +952,7 @@ view compose/deep [
 							]
 							show-now [window-message-table window-update-fld]
 
+
 						]
 						button "Last Msg" on-action [
 							set-face chat-area last-message
@@ -961,8 +964,12 @@ view compose/deep [
 							set-face chat-area join "@rebolbot " get-face chat-area
 							focus chat-area
 						]
-						button "Fetch Msgs" green on-action [
+						toggle "Fetch Msgs" green on-action [
 							forever [
+								if not get-face face [
+									clear-content content-bar
+									exit
+								]
 								rsolog "update-messages"
 								if error? err: try [
 									update-messages
@@ -987,8 +994,9 @@ view compose/deep [
 								wait wait-period
 							]
 
+
 						]
-						button "Code" yello on-action [
+						button "Format Code" yello on-action [
 							use [txt][
 								if not empty? txt: get-face chat-area [
 									; insert 4 spaces infront of each line
@@ -1023,7 +1031,7 @@ view compose/deep [
 							]
 						]
 
-						button "Stop" red on-action [
+						button "Halt" red on-action [
 							close-window face
 							halt
 						]
@@ -1071,21 +1079,16 @@ view compose/deep [
 					] ; options [max-hint: 200x100]
 
 				]
-				box 60x30
-			] options [min-hint: 300x100 max-hint: 1200x110]
+				; box 60x30
+			] options [min-hint: 1200x150 max-hint: 1400x200]
 		]
-		scroll-panell [
-			; holds icons and tagged messages
 
-		]
 		when [enter] on-action [
 			set 'window-update-fld update-fld
 			set 'window-message-table message-table
 			set 'mychat-area chat-area
 			; set-face tb tool-bar-data
-			set-face time-fld now/time
-
-			set-face time-fld now/time
+			set-face time-fld join "Session from: " now/time
 			show-now time-fld
 		]
 	]
