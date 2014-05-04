@@ -56,7 +56,7 @@ foreach [module test][
 			switch/default module [
 				%r3-gui.r3 [
 					test: body-of :load-gui
-					either parse url [thru 'try set test block! to end][
+					either parse test [thru 'try set test block! to end][
 						parse test [word! set test url!]
 						write module read test
 						do rsolog module
