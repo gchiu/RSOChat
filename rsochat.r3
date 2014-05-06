@@ -27,11 +27,13 @@ Rebol [
                 2-May-2014 removed 'needs header .. odd errors occur
                 3-May-2014 0.0.98 rearranged layout a little, added a toggle to fetch messages.  Icon bar is removed when toggled off but not replaced yet when restarted
                 4-May-2014 0.9.99 client can now switch rooms, update icon bars and trap malformed messages ( need to track down how they are being saved )
+                6-May-2014 0.1.0 reorganized name space naming so u: system/contexts/user
           }
 ]
 
 logfile: %events.reb
-if not exists? logfile [write logfile ""]
+; if not exists? logfile [write logfile ""]
+write logfile ""
 debug: true
 
 do rsolog: func [event][
@@ -80,6 +82,9 @@ foreach [module test][
 	]
 ]
 
+; create a short to the user global context
+u: self
+
 login2so: func [email [email!] password [string!] chat-page [url!]
 	/local fkey root loginpage cookiejar result err configobj
 ][
@@ -119,7 +124,6 @@ login2so: func [email [email!] password [string!] chat-page [url!]
 
 
 no-of-messages: 20
-lastmessage-no: 14874139 ; 10025800
 wait-period: 5.0 ; seconds
 
 bot-cookie: fkey: none
@@ -204,18 +208,8 @@ if not exists? %rsoconfig.r3 [
 						; okay, all is well
 						close-window face
 						result: login2so email password referrer-url room-id room-descriptor
-						?? result
-						if any [
-							empty? result/fkey
-							empty? result/bot-cookie
-						][
-							attempt [delete %rsoconfig.r3]
-						]
-						save %rsoconfig.r3 make result compose [
-							room-id: (room-id)
-							room-descriptor: (room-descriptor)
-						]
-
+						rsolog mold result
+						save %rsoconfig.r3 append result compose [room-id: (room-id) room-descriptor: (room-descriptor)]
 					]
 				]
 				button "Cancel" red on-action [
@@ -239,29 +233,41 @@ do load-config: func [] [
 			alert "rsoconfig.r3 is corrupt - use settings to set them again"
 		]
 	] [
+		; only get here if cancelled the above
 		view [
 			title "Enter the StackOverflow Chat Parameters"
 			hpanel 2 [
 				label "Fkey: " fkey-fld: field 120 ""
-				label "Cookie: " cookie-area: area 400x80 "" options [min-hint: 400x80]
+				label "Cookie: " cookie-area: field 120
+				label "Chat room-id" room-id-fld: field 20
+				label "Room Descriptor" room-descriptor-fld: field 120
 				pad 50x10
 				hpanel [
 					button "OK" on-action [
 						either any [
 							empty? fkey: get-face fkey-fld
 							empty? cookie: get-face cookie-area
-						]
-						[alert "Both fields required!"]
+							empty? room-id: get-face room-id-fld
+							empty? room-descriptor: get-face room-descriptor-fld
+						][
+							alert "All fields required!"]
 						[
-							either parse get-face cookie-area [to "usr=" copy cookie to "&" to end] [
-								set 'bot-cookie get-face cookie-area
-								set 'fkey get-face fkey-fld
+							if not parse cookie ["usr=t=" to end][
+								alert "usr cookie needed of form: usr=t=xxxxx&s=xxxxx"
+								exit
+							]
+							either attempt [room-id: to integer! room-id][
+								set 'bot-cookie cookie
+								set 'fkey fkey
+								set 'room-descriptor room-descriptor
+								set 'room-id room-id
 								save %rsoconfig.r3 make object! compose [
 									fkey: (fkey) bot-cookie: (bot-cookie)
+									room-id: (room-id) room-descriptor: (room-descriptor)
 								]
 								close-window face
-							] [
-								alert "usr cookie not present"
+							][
+								alert "Room ID needs to be an integer!"
 							]
 						]
 					]
@@ -316,94 +322,105 @@ two-minutes-ago: does [
 
 image-cache: make block! 20
 
-; how can we run this ??
 update-icons: func [url
-	/local icon-bar name image-url image link is-image? page gravatar-rule user-id index
+	/local icon-bar name image-url image link is-image? page gravatar-rule user-id index err err2
 ] [
-
-	?? url
+	rsolog url
 	digit: charset [#"0" - #"9"]
 	digits: [some digit]
 	icon-bar: copy []
 	gravatar-rule: union charset [#"0" - #"9"] charset [#"a" - #"z"]
-	page: to string! read url
-	parse page [thru "update_user"
-		some [
-			thru "id:" some space copy user-id digits
-			thru "name:" thru {("} copy name to {")} thru "email_hash:" thru {"} copy image-url to {"}
-			(
-				either not index: find image-cache user-id [
-					case [
-						all [
-							#"!" = first image-url
-							parse image-url [thru "graph.facebook.com/" copy image-url thru "?type=" to end]
-						][
-							image-url: ajoin [http://graph.facebook.com/ image-url "small"]
-							is-image?: true
-							print 'facebook
-
-						]
-						#"!" = first image-url [
-							is-image?: true
-							remove image-url
-							append image-url "?g&s=32"
-							print 'stack-imgur
-						]
-						parse image-url [some gravatar-rule] [
-							is-image?: true
-							image-url: ajoin [http://www.gravatar.com/avatar/ image-url "?s=32&d=identicon&r=PG"]
-							print 'Gravatar
-						]
-					]
-					if is-image? [
-						?? image-url
-						if error? err: try [
-							link: read to-url image-url
-						][
-							; check for redirect to other host as used in facebook
-							if all [find err/arg1 "Redirect" url? err/arg3][
-								print "*** error redirect ****"
-								link: read err/arg3
-							]
-						]
-						; examine the binary to see what type of image it is - can't rely on extension
-						imagetext: to string! copy/part link 20
+	if error? err: try [
+		page: to string! read url
+	][
+		rsolog mold err
+		return icon-bar
+	]
+	if error? err: try [
+		parse page [thru "update_user"
+			some [
+				thru "id:" some space copy user-id digits
+				thru "name:" thru {("} copy name to {")} thru "email_hash:" thru {"} copy image-url to {"}
+				(
+					either not index: find image-cache user-id [
 						case [
-							find/part imagetext "PNG" 4 [
-								image: decode 'PNG link
-								print 'PNG
+							all [
+								#"!" = first image-url
+								parse image-url [thru "graph.facebook.com/" copy image-url thru "?type=" to end]
+							][
+								image-url: ajoin [http://graph.facebook.com/ image-url "small"]
+								is-image?: true
+								print 'facebook
+
 							]
-							find/part imagetext "JFIF" 10 [
-								image: decode 'JPEG link
-								print 'JPEG
+							#"!" = first image-url [
+								is-image?: true
+								remove image-url
+								append image-url "?g&s=32"
+								print 'stack-imgur
 							]
-							find/part imagetext "GIF89" 6 [
-								attempt [
-									if block? image: load link [image: copy blank-img]
-								]
-								print 'GIF
-							]
-							true [
-								image: copy blank-img
-								print 'Unknown
+							parse image-url [some gravatar-rule] [
+								is-image?: true
+								image-url: ajoin [http://www.gravatar.com/avatar/ image-url "?s=32&d=identicon&r=PG"]
+								print 'Gravatar
 							]
 						]
+						if is-image? [
+							?? image-url
+							if error? err2: try [
+								link: read to-url image-url
+							][
+								; check for redirect to other host as used in facebook
+								if all [find err2/arg1 "Redirect" url? err2/arg3][
+									print "*** error redirect ****"
+									link: read err2/arg3
+								]
+							]
+							; examine the binary to see what type of image it is - can't rely on extension
+							imagetext: to string! copy/part link 20
+							case [
+								find/part imagetext "PNG" 4 [
+									image: decode 'PNG link
+									print 'PNG
+								]
+								find/part imagetext "JFIF" 10 [
+									image: decode 'JPEG link
+									print 'JPEG
+								]
+								find/part imagetext "GIF89" 6 [
+									attempt [
+										if block? image: load link [image: copy blank-img]
+									]
+									print 'GIF
+								]
+								true [
+									image: copy blank-img
+									print 'Unknown
+								]
+							]
 
-						append image-cache user-id
-						repend/only image-cache [image name]
+							append image-cache user-id
+							repend/only image-cache [image name]
 
-						repend icon-bar [image name]
+							repend icon-bar [image name]
+							repend/only icon-bar ['set-face 'chat-area rejoin ["@" replace/all name " " "" " "] 'focus 'chat-area]
+						]
+
+					] [
+						; user is in cache - we're not going to bother updating a user's image for the moment
+						; index now points to the image-cache
+						repend icon-bar select index user-id
 						repend/only icon-bar ['set-face 'chat-area rejoin ["@" replace/all name " " "" " "] 'focus 'chat-area]
 					]
-
-				] [
-					; user is in cache - we're not going to bother updating a user's image for the moment
-					; index now points to the image-cache
-					repend icon-bar select index user-id
-					repend/only icon-bar ['set-face 'chat-area rejoin ["@" replace/all name " " "" " "] 'focus 'chat-area]
-				]
-			)
+				)
+			]
 		]
+		rsolog "returning new icon bar"
+		rsolog length? icon-bar
+	][
+		; should log a timeout or other error somewhere
+		rsolog "failed to get icon bar"
+		rsolog mold err
 	]
 	icon-bar
 ]
@@ -413,7 +430,7 @@ blank-img: make image! 128x128
 
 grab-icons: func [url
 	/local icon-bar name image-url image link is-image? page gravatar-rule user-id digit digits
-	lastimage err
+	lastimage err err2
 ] [
 	if error? err: try [
 		lastimage: none
@@ -423,8 +440,12 @@ grab-icons: func [url
 		icon-bar: copy []
 		gravatar-rule: union charset [#"0" - #"9"] charset [#"a" - #"z"]
 		;  {!http://graph.facebook.com/100000296050736/picture?type=large}
-
-		; page: to string! read url
+		if error? err2: try [
+			page: to string! read url
+		][
+			rsolog mold err2
+			return icon-bar
+		]
 		parse page: to string! read url [thru "update_user"
 			some [
 				thru "id:" some space copy user-id digits
@@ -454,14 +475,14 @@ grab-icons: func [url
 						]
 					]
 					if is-image? [
-						?? image-url
-						if error? err: try [
+						rsolog image-url
+						if error? err2: try [
 							link: read to-url image-url
 						][
 							; check for redirect to other host as used in facebook
-							if all [find err/arg1 "Redirect" url? err/arg3][
+							if all [find err2/arg1 "Redirect" url? err2/arg3][
 								print "*** error redirect ****"
-								link: read err/arg3
+								link: read err2/arg3
 							]
 						]
 						; examine the binary to see what type of image it is - can't rely on extension
@@ -496,12 +517,12 @@ grab-icons: func [url
 				)
 			]
 		]
-		icon-bar
+		rsolog "exiting grab-icons function"
 	][
 		if equal? err/id 'not-connected [alert "Room-Descriptor may be wrong!"]
-		?? err
-		copy []
+		rsolog mold err
 	]
+	icon-bar
 ]
 
 http-header: [
@@ -525,142 +546,6 @@ fetch-messages: funct [url [url!] header [block!] from [integer!] no-of-messages
 ]
 
 
-; mini-http is a minimalistic http implementation
-
-mini-http: closure [url [url!] method [word! string!] code [string!] timeout [integer!]
-	/callback cb
-	/cookies cookie [string!]
-	/local ; result url-obj payload port f-body
-] [
-	url-obj: http-request: payload: port: none
-	unless cookies [cookie: copy ""]
-
-	http-request: {$method $path HTTP/1.0
-Host: $host
-User-Agent: Mozilla/5.0
-Accept: */*
-Accept-Language: en-US,en;q=0.5
-Accept-Encoding: gzip, deflate
-DNT: 1
-Content-Type: application/x-www-form-urlencoded; charset=UTF-8
-X-Requested-With: XMLHttpRequest
-Referer: http://$host
-Content-Length: $len
-Cookie: $cookie
-
-$code}
-
-	; Content-Type: text/plain; charset=UTF-8
-
-	url-obj: construct/with sys/decode-url url make object! copy [port-id: 80 path: ""]
-	if empty? url-obj/path [url-obj/path: copy "/"]
-	payload: reword http-request reduce [
-		'method method
-		'path url-obj/path
-		'host url-obj/host
-		'len length? code
-		'cookie cookie
-		'code code
-	]
-	port: make port! rejoin [
-		tcp:// url-obj/host ":" url-obj/port-id
-	]
-
-	f-body: compose/deep copy/deep [
-
-		timestamp:
-		person-id:
-		message-id:
-		parent-id: 0
-		user-name: make string! 20
-
-		message-rule: [
-			<event_type> quote 1 |
-			<time_stamp> set timestamp integer! |
-			<content> set content string! |
-			<id> integer! |
-			<user_id> set person-id integer! |
-			<user_name> set user-name string! |
-			<room_id> quote (room-id) |
-			<room_name> string! |
-			<message_id> set message-id integer! |
-			<parent_id> set parent-id integer! |
-			<show_parent> logic! |
-			tag! skip |
-			end
-		]
-
-		switch/default event/type [
-			lookup [open event/port false]
-			connect [
-				write event/port (to binary! payload)
-				event/port/locals: copy #{}
-				false
-			]
-			wrote [read event/port false]
-			read [
-				append event/port/locals event/port/data
-				clear event/port/data
-				read event/port
-				false
-			]
-			close done [
-				if event/port/data [
-					append event/port/locals event/port/data
-				]
-				result: to string! event/port/locals
-				;attempt [
-
-				if parse result [thru "^/^/" copy result to end] [
-					json: load-json/flat result
-					messages: json/2
-					; now skip thru each message and see if any unread
-					len: length? system/contexts/user/all-messages
-					message-rule: compose copy message-rule
-					foreach msg messages [
-						content: none
-						user-name: none
-						message-id: 0
-
-						either attempt [parse msg [some message-rule]] [
-							attempt [content: trim decode-xml content]
-							?? message-id
-							if all [
-								integer? message-id
-								not exists? join storage-dir message-id
-							] [
-								write join storage-dir message-id mold msg
-							]
-							if message-id > lastmessage-no [
-								set 'lastmessage-no message-id
-								repend/only system/contexts/user/all-messages [person-id message-id user-name content timestamp]
-							]
-						] [print ["failed parse" msg]]
-					]
-				]
-
-				true
-			]
-		] [true]
-	]
-	port/awake: func [event /local result messages content message-no message-id data json user-name message-rule parent-id person-id timestamp] f-body
-	open port
-]
-
-raw-read: func [message-id target [url!]
-	/local result err
-][
-	if error? set/any 'err try [
-		either result: mini-http target 'GET "" 60 [
-			?? result
-			reply message-id result
-		][
-			reply message-id "HTTP timeout"
-		]
-	][
-		reply message-id mold err
-	]
-]
 extract-http-response: func [http-text [string!]
 	/local result code bodytext server-code
 ][
@@ -672,7 +557,6 @@ extract-http-response: func [http-text [string!]
 		make object! compose [error: (server-code) code: (code)]
 	]
 ]
-
 
 
 percent-encode: func [char [char!]][
@@ -767,7 +651,7 @@ read-messages: func [cnt room-id][
 	]
 ]
 message-rule: [
-	<event_type> quote 1 |
+	<event_type> set event_type integer! |
 	<time_stamp> set timestamp integer! |
 	<content> set content string! |
 	<id> integer! |
@@ -793,21 +677,28 @@ update-messages: func [room-id /local result
 
 	foreach msg messages [
 		content: user-name: none message-no: 0
-
 		either attempt [parse msg [some message-rule]] [
 			?? msg
 			?? message-id
+			if event_type = 3 [
+				view compose [
+					area (mold msg)
+				]
+			]
+
 			if all [
 				integer? message-id
 				message-id > 0
 				not exists? join storage-dir message-no
+				any [event_type = 1 event_type = 2]
 			][
 				write join storage-dir message-no msg
 			]
 			attempt [content: trim decode-xml content]
+			;; should this be inside the 'if ?
 			if message-id > lastmessage-no [
 				lastmessage-no: message-id
-				repend/only system/contexts/user/all-messages [person-id message-id user-name content timestamp]
+				repend/only u/all-messages [person-id message-id user-name content timestamp]
 			]
 		] [print "failed"]
 	]
@@ -817,6 +708,7 @@ update-messages: func [room-id /local result
 
 tool-bar-inf: now
 
+;; got to save it sometime ...
 either exists? %toolbar.r3 [
 	print "loading images off disk"
 	tool-bar-data: load %toolbar.r3
@@ -826,6 +718,8 @@ either exists? %toolbar.r3 [
 ][
 	print "loading images off web"
 	tool-bar-data: grab-icons referrer-url room-id room-descriptor
+	rsolog "now have the tool bar data"
+	rsolog join "Length: " length? tool-bar-data
 ]
 
 view [
@@ -837,7 +731,7 @@ view [
 				row: get-face face
 				column: to integer! row/x
 				row: to integer! row/y
-				row-data: pick system/contexts/user/all-messages row
+				row-data: pick u/all-messages row
 				switch column [
 					3 [
 						set-face chat-area ajoin ["@" row-data/3 " " get-face chat-area]
@@ -853,7 +747,7 @@ view [
 				]
 			]
 			content-bar: hpanel [
-				tb: tool-bar [(tool-bar-data)] on-action [print arg]
+				; tb: tool-bar [] on-action [print arg]
 			]
 			hpanel 3 [
 				head-bar "Bot Commands"
@@ -890,15 +784,18 @@ view [
 								cmd: copy ""
 								view/modal [
 									hpanel [
-										label "URL: " urlfld: field 200 on-action [
-											attempt [
-												all [
-													url: load get-face urlfld
-													url! = type? url
-													set 'cmd ajoin ["Save my details " url " " now/zone]
+										vpanel [
+											label "My Personal Details"
+											label "URL: " urlfld: field 200 on-action [
+												attempt [
+													all [
+														url: load get-face urlfld
+														url! = type? url
+														set 'cmd ajoin ["Save my details " url " " now/zone]
+													]
 												]
+												close-window face
 											]
-											close-window face
 										]
 									]
 									when [enter] on-action [focus urlfld]
@@ -942,7 +839,7 @@ view [
 								] [
 									set-face chat-area copy ""
 									if txt <> last-message [
-										speak txt system/contexts/user/room-id
+										speak txt u/room-id
 										set 'last-message txt
 									]
 								]
@@ -957,8 +854,8 @@ view [
                                         ] 
                                     }
 
-							len: length? system/contexts/user/all-messages
-							; clear system/contexts/user/all-messages
+							len: length? u/all-messages
+							; clear u/all-messages
 							print ["loading messages at " now]
 
 							foreach msg read storage-dir [
@@ -969,7 +866,7 @@ view [
 								user-name: make string! 20
 
 								message-rule: [
-									<event_type> quote 1 |
+									<event_type> set event_type integer! |
 									<time_stamp> set timestamp integer! |
 									<content> set content string! |
 									<id> integer! |
@@ -1004,18 +901,26 @@ view [
 
 										attempt [content: trim decode-xml content]
 										; ?? message-id
-										if message-id > lastmessage-no [
-											set 'lastmessage-no message-id
-											if msg_room_id = room-id [
-												repend/only system/contexts/user/all-messages [person-id message-id user-name content timestamp]
+										if event_type = 3 [
+											view compose [
+												area (mold msg)
 											]
+										]
+
+										if all [
+											message-id > lastmessage-no
+											any [event_type = 1 event_type = 2]
+											;; event_type 2 is edit .. so need to find and replace existing message in display
+										][
+											set 'lastmessage-no message-id
+											repend/only u/all-messages [person-id message-id user-name content timestamp]
 										]
 									] [print ["failed parse" msg]]
 								]
 							]
 
 
-							data: copy/deep system/contexts/user/all-messages
+							data: copy/deep u/all-messages
 							foreach msg data [
 								msg/5: from-now utc-to-local unix-to-utc msg/5
 							]
@@ -1024,12 +929,12 @@ view [
 							set-face window-update-fld form now/time
 
 							?? len
-							probe length? system/contexts/user/all-messages
+							probe length? u/all-messages
 
 							if all [
 								value? 'len
 								integer? len
-								len <> length? system/contexts/user/all-messages
+								len <> length? u/all-messages
 							] [
 								set-face message-table/names/scr 100%
 								do-face message-table/names/scr
@@ -1060,12 +965,12 @@ view [
 								rsolog "update-messages"
 								if error? err: try [
 									; grabs latest messages and saves to message store, as well as all-messages user global
-									update-messages system/contexts/user/room-id
+									update-messages u/room-id
 								][
 									print mold err
 								]
 								; update-icons referrer-url
-								data: copy/deep system/contexts/user/all-messages
+								data: copy/deep u/all-messages
 								rsolog "update times on text-table data"
 								foreach msg data [
 									msg/5: from-now utc-to-local unix-to-utc msg/5
@@ -1080,15 +985,20 @@ view [
 								wait wait-period
 								;; update toolbar
 								rsolog "checking tool-bar data"
-								new-tool-bar-data: update-icons system/contexts/user/referrer-url system/contexts/user/room-id system/contexts/user/room-descriptor
+								new-tool-bar-data: update-icons u/referrer-url u/room-id u/room-descriptor
+								rsolog type? new-tool-bar-data
+								rsolog join "Length of toolbar data: " length? new-tool-bar-data
 								rsolog "obtained new tool bar data"
+								;view [
+								;         tool-bar new-tool-bar-data on-action [print arg]
+								;]
 								; set-face statusfld rsolog "check for changes in tool-bar"
-								if not equal? new-tool-bar-data system/contexts/user/tool-bar-data [
-									system/contexts/user/tool-bar-data: new-tool-bar-data
+								if not equal? new-tool-bar-data u/tool-bar-data [
+									u/tool-bar-data: new-tool-bar-data
 									clear-content content-bar
 									rsolog "appending new tool bar layout"
 									; set-face statusfld "Changing toolbar"
-									append-content content-bar [tb: tool-bar system/contexts/user/tool-bar-data on-action [print arg]]
+									append-content content-bar [tb: tool-bar u/tool-bar-data on-action [print arg]]
 									; set-face chat-area join get-face chat-area " .. updated toolbar"
 									show-now [chat-area content-bar]
 								]
@@ -1100,8 +1010,8 @@ view [
 								if not empty? txt: get-face chat-area [
 									; insert 4 spaces infront of each line
 									trim/head/tail txt
-									replace/all txt "^/" "^/ "
-									insert head txt " "
+									replace/all txt "^/" "^/    "
+									insert head txt "    "
 									set-face chat-area txt
 								]
 							]
@@ -1167,13 +1077,17 @@ view [
 										attempt [tobj/room-id: to-integer get-face room-id-fld]
 										tobj/room-descriptor: get-face descriptorfld
 										; check for the appropriate values in the object!
+										if not parse tobj/bot-cookie ["usr=t=" to end][
+											alert "usr cookie needed of form: usr=t=xxxxx&s=xxxxx"
+											exit
+										]
 										foreach [key type][
 											fkey string!
 											room-id integer!
 											room-descriptor string!
 											bot-cookie string!
 										][
-											if not-equal? type to word! t: type? get in tobj key [
+											if not-equal? type to word! t: type? tobj/(key) [
 												alert ajoin ["Wrong value for " form key " expected " type " and got " t]
 												exit
 											]
@@ -1181,30 +1095,28 @@ view [
 										save %rsoconfig.r3 tobj
 										close-window face
 										foreach key words-of tobj [
-											; set to path! reduce [ 'system 'contexts 'user key ] get in tobj key
-											set 'system/contexts/user/(key) get in tobj key
+											u/(key): tobj/(key)
 										]
-										set-face titletl system/contexts/user/room-descriptor
+										set-face titletl u/room-descriptor
 										show-now titletl
 										; clear out the old messages
-										system/contexts/user/all-messages: copy []
+										u/all-messages: copy []
 										SET-FACE/FIELD window-message-table copy [] 'data
 										show-now [window-message-table]
-										system/contexts/user/lastmessage-no: 0
-										update-messages system/contexts/user/room-id
+										u/lastmessage-no: 0
+										update-messages u/room-id
 
 									]
 									when [enter] on-action [
 										set-face nom-fld no-of-messages
-										set-face fk-fld system/contexts/user/fkey
-										set-face cookie-area system/contexts/user/bot-cookie
-										set-face room-id-fld system/contexts/user/room-id
-										set-face descriptorfld system/contexts/user/room-descriptor
+										set-face fk-fld u/fkey
+										set-face cookie-area u/bot-cookie
+										set-face room-id-fld u/room-id
+										set-face descriptorfld u/room-descriptor
 									]
 								]
 							]
 						]
-
 					]
 				]
 			] options [min-hint: 1200x150 max-hint: 1400x200]
@@ -1216,7 +1128,8 @@ view [
 			set 'mychat-area chat-area
 			set-face time-fld join "Session from: " now/time
 			show-now time-fld
-			set-face titletl system/contexts/user/room-descriptor
+			set-face titletl u/room-descriptor
+			append-content content-bar [tb: tool-bar u/tool-bar-data on-action [print arg]]
 		]
 	]
 ]
