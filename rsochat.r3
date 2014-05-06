@@ -3,8 +3,8 @@ Rebol [
 	File: %rsochat.r3
 	author: "Graham Chiu"
 	rights: "BSD"
-	date: [17-June-2013 19-June-2013 21-June-2013 4-May-2014]
-	version: 0.0.99
+	date: [17-June-2013 19-June-2013 21-June-2013 6-May-2014]
+	version: 0.1.0
 	instructions: {
             use the r3-view.exe client from Saphirion for windows currently at http://development.saphirion.com/resources/r3-view.exe
             and then just run this client
@@ -844,16 +844,6 @@ view [
 									]
 								]
 							]
-							;= update toolbar
-							comment {
-                                        read the page and save it
-                                        extract messages
-                                        extract current users
-                                        if current users <> last users [
-                                            grab new images
-                                        ] 
-                                    }
-
 							len: length? u/all-messages
 							; clear u/all-messages
 							print ["loading messages at " now]
@@ -1006,14 +996,13 @@ view [
 						]
 
 						button "Code" brown on-action [
-							use [txt][
-								if not empty? txt: get-face chat-area [
-									; insert 4 spaces infront of each line
-									trim/head/tail txt
-									replace/all txt "^/" "^/    "
-									insert head txt "    "
-									set-face chat-area txt
-								]
+							f4space: "    "
+							if not empty? txt: get-face chat-area [
+								; insert 4 spaces infront of each line
+								trim/head/tail txt
+								replace/all txt "^/" join "^/" f4space
+								insert head txt f4space
+								set-face chat-area txt
 							]
 						]
 						button "Delete Message" red on-action [
