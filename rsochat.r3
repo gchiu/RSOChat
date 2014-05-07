@@ -4,7 +4,7 @@ Rebol [
 	author: "Graham Chiu"
 	rights: "BSD"
 	date: [17-June-2013 19-June-2013 21-June-2013 6-May-2014]
-	version: 0.1.0
+	version: 0.1.1
 	instructions: {
             use the r3-view.exe client from Saphirion for windows currently at http://development.saphirion.com/resources/r3-view.exe
             and then just run this client
@@ -28,6 +28,7 @@ Rebol [
                 3-May-2014 0.0.98 rearranged layout a little, added a toggle to fetch messages.  Icon bar is removed when toggled off but not replaced yet when restarted
                 4-May-2014 0.9.99 client can now switch rooms, update icon bars and trap malformed messages ( need to track down how they are being saved )
                 6-May-2014 0.1.0 reorganized name space naming so u: system/contexts/user
+                7-May-2014 0.1.1 integrated pretty print, and launch rebol scripts ....  Also now use an image-cache
           }
 ]
 
@@ -422,109 +423,102 @@ update-icons: func [url
 		rsolog "failed to get icon bar"
 		rsolog mold err
 	]
+	save %imagecache.reb image-cache
 	icon-bar
 ]
 
 
 blank-img: make image! 128x128
 
-grab-icons: func [url
-	/local icon-bar name image-url image link is-image? page gravatar-rule user-id digit digits
-	lastimage err err2
-] [
-	if error? err: try [
-		lastimage: none
-		digit: charset [#"0" - #"9"]
-		digits: [some digit]
 
-		icon-bar: copy []
-		gravatar-rule: union charset [#"0" - #"9"] charset [#"a" - #"z"]
-		;  {!http://graph.facebook.com/100000296050736/picture?type=large}
-		if error? err2: try [
-			page: to string! read url
-		][
-			rsolog mold err2
-			return icon-bar
-		]
-		parse page: to string! read url [thru "update_user"
-			some [
-				thru "id:" some space copy user-id digits
-				thru "name:" thru {("} copy name to {")} thru "email_hash:" thru {"} copy image-url to {"}
-				(
-					is-image?: false
-					case [
-						all [
-							#"!" = first image-url
-							parse image-url [thru "graph.facebook.com/" copy image-url thru "?type=" to end]
-						][
-							image-url: ajoin [http://graph.facebook.com/ image-url "small"]
-							is-image?: true
-							print 'facebook
+clean-script: use [out spaced indent emit-line emit-space emit load-next][
+	out: none ; output text
+	spaced: off ; add extra bracket spacing
+	indent: "" ; holds indentation tabs
 
-						]
-						#"!" = first image-url [
-							is-image?: true
-							remove image-url
-							append image-url "?g&s=32"
-							print 'stack-imgur
-						]
-						parse image-url [some gravatar-rule] [
-							is-image?: true
-							image-url: ajoin [http://www.gravatar.com/avatar/ image-url "?s=32&d=identicon&r=PG"]
-							print 'Gravatar
-						]
-					]
-					if is-image? [
-						rsolog image-url
-						if error? err2: try [
-							link: read to-url image-url
-						][
-							; check for redirect to other host as used in facebook
-							if all [find err2/arg1 "Redirect" url? err2/arg3][
-								print "*** error redirect ****"
-								link: read err2/arg3
-							]
-						]
-						; examine the binary to see what type of image it is - can't rely on extension
-						imagetext: to string! copy/part link 20
-						case [
-							find/part imagetext "PNG" 4 [
-								image: decode 'PNG link
-								print 'PNG
-							]
-							find/part imagetext "JFIF" 10 [
-								image: decode 'JPEG link
-								print 'JPEG
-							]
-							find/part imagetext "GIF89" 6 [
-								attempt [
-									if block? image: load link [image: copy blank-img]
-								]
-								print 'GIF
-							]
-							true [
-								image: copy blank-img
-								print 'Unknown
-							]
-						]
+	emit-line: func [] [append out newline]
 
-						append image-cache user-id
-						repend/only image-cache [image name]
-
-						repend icon-bar [image name]
-						repend/only icon-bar ['set-face 'chat-area rejoin ["@" replace/all name " " "" " "] 'focus 'chat-area]
-					]
-				)
+	emit-space: func [pos] [
+		append out either newline = last out [indent] [
+			pick [#" " ""] found? any [
+				spaced
+				not any [find "[(" last out find ")]" first pos]
 			]
 		]
-		rsolog "exiting grab-icons function"
-	][
-		if equal? err/id 'not-connected [alert "Room-Descriptor may be wrong!"]
-		rsolog mold err
 	]
-	icon-bar
+
+	emit: func [from to] [emit-space from append out copy/part from to]
+
+	load-next: func [string [string!] /local out][
+		out: transcode/next to binary! string
+		out/2: skip string subtract length? string length? to string! out/2
+		out
+	]
+
+	func [
+		"Returns new script text with standard spacing (pretty printed)."
+		script "Original Script text"
+		/spacey "Optional spaces near brackets and parens"
+		/gaps "Force space between two blocks"
+		/local str new
+	] [
+		spaced: found? spacey
+		gaps: either found? gaps [
+			[fail]
+		][
+			["][" new: (remove indent emit str new append indent tab)]
+		]
+		clear indent
+		out: append clear copy script newline
+		parse script blk-rule: [
+			some [
+				str:
+				newline (emit-line) |
+				" " | "^-" |
+				#";" [thru newline | to end] new: (emit str new) |
+				gaps |
+				[#"[" | #"("] (emit str 1 append indent tab) blk-rule |
+				[#"]" | #")"] (remove indent emit str 1) break |
+				skip (set [value new] load-next str emit str new) :new
+			]
+		]
+		remove out ; remove first char
+	]
 ]
 
+rebol-header: {Rebol [
+    Title: "--here--"
+    File: %$file
+    Date: $date 
+    Author: "Graham Chiu"
+]
+
+if not value? 'to-text [
+    do load-r3gui: funct [] [
+        either exists? %r3-gui.r3 [
+            do %r3-gui.r3
+        ][
+            url: body-of :load-gui
+            either parse url [thru 'try set url block! to end][
+                parse url [word! set url url!]
+                write %r3-gui.r3 read url
+                                        do %r3-gui.r3
+            ][
+                load-gui
+            ]
+        ]
+    ]
+]
+
+}
+
+make-rebol-header: funct [editingarea][
+	header: reword rebol-header reduce copy [
+		'file %unknown.reb
+		'date now/date
+	]
+	set-face editingarea join header get-face editingarea
+]
 http-header: [
 	User-Agent: "Mozilla/5.0 (Windows NT 6.1; rv:22.0) Gecko/20100101 Firefox/22.0"
 	Accept: "application/json, text/javascript, */*; q=0.01"
@@ -708,19 +702,18 @@ update-messages: func [room-id /local result
 
 tool-bar-inf: now
 
-;; got to save it sometime ...
-either exists? %toolbar.r3 [
-	print "loading images off disk"
-	tool-bar-data: load %toolbar.r3
-	tool-bar-inf: info? %toolbar.r3
-	tool-bar-inf: tool-bar-inf/date
-	?? tool-bar-inf
-][
-	print "loading images off web"
-	tool-bar-data: grab-icons referrer-url room-id room-descriptor
-	rsolog "now have the tool bar data"
-	rsolog join "Length: " length? tool-bar-data
+;; image-cache [ id-of-user [ image username ] ... ]
+
+if exists? %imagecache.reb [
+	rsolog "loading image-cache off disk"
+	image-cache: load %imagecache.reb
 ]
+
+rsolog "loading images off web"
+tool-bar-data: update-icons referrer-url room-id room-descriptor
+; tool-bar-data: grab-icons referrer-url room-id room-descriptor
+rsolog "now have the tool bar data"
+rsolog join "Length: " length? tool-bar-data
 
 view [
 	hpanel [
@@ -754,29 +747,28 @@ view [
 				head-bar "Chat Area"
 				head-bar "Chat Functions"
 				vpanel [
-
 					bot-commands: text-table 200x100 ["Command" #1 40 "Purpose" #2 100]
 					[
-						["help" "returns a list of bot comands"]
-						["delete" "deletes the last response made by bot"]
-						["introduce me" "says something known about me stored on system"]
-						["version" "current version of bot"]
-						["cc nn" "Curecode ticket no to display"]
-						["fetch nn" "Fetches stored JSON message by its ID"]
-						["what is the meaning of life?" "Asks purpose of life"]
+						["Cc nn" "Curecode ticket no to display"]
+						["Delete" "deletes the last response made by bot"]
+						["Fetch nn" "Fetches stored JSON message by its ID"]
+						["Find description" "Finds named key"]
 						["Greet" "Sends a greeting to the bot"]
+						["Help" "returns a list of bot comands"]
+						["Introduce me" "says something known about me stored on system"]
+						["Present?" "Who is currently online"]
+						["Remove key" "Removes named key"]
+						["Save key [word! |string!] description url!" "Saves key, description and url"]
 						["Save my details url!" "Save my details as url with timezone"]
 						["Search" "Search by key"]
-						["Tweet" "Tweet as rebolbot"]
 						["Show links by " "Show links by user"]
 						["Shut Up" "Close bot down - emergency"]
 						["Source" "Source of Rebol function"]
-						["Save key [word! |string!] description url!" "Saves key, description and url"]
-						["Remove key" "Removes named key"]
-						["Find description" "Finds named key"]
+						["Tweet" "Tweet as rebolbot"]
+						["Version" "current version of bot"]
+						["What is the meaning of life?" "Asks purpose of life"]
 						["What is the time in GMT?" "Time in GMT"]
 						["Who do you know?" "Returns a list of known users"]
-						["present?" "Who is currently online"]
 						["Who is " "Who is the named user"]
 					] on-action [
 						switch cmd: pick get-face/field face 'row 1 [
@@ -813,6 +805,8 @@ view [
 						set-face chat-area ajoin ["@" get-face botbtn " " cmd]
 						focus chat-area
 					]
+
+
 				]
 				chat-area: area "" 600x90 options [min-hint: 750x50 detab: true]
 				on-key [
@@ -823,8 +817,6 @@ view [
 					][
 						do-face sendbtn
 					]
-
-
 				]
 				scroll-panel [
 					htight 2 [
@@ -1102,6 +1094,59 @@ view [
 										set-face cookie-area u/bot-cookie
 										set-face room-id-fld u/room-id
 										set-face descriptorfld u/room-descriptor
+									]
+								]
+							]
+						]
+						whoisbtn: button "Who's here?" on-action [
+							people: []
+							foreach [image name block] u/tool-bar-data [
+								if string? name [
+									append people name
+								]
+							]
+							people: sort people
+							view [
+								text-list 100x300 people on-action [
+									set-face chat-area ajoin [get-face chat-area "@" pick get-face/field face 'table-data arg " "]
+									close-window face
+									focus chat-area
+								] options [min-hint: 200x300]
+							]
+						]
+						prettybtn: button "Pretty" on-action [
+							view [
+								vgroup [
+									title "Clean Script"
+									cs: area options [detab: true]
+									hgroup [
+										button "Insert Header" on-action [
+											make-rebol-header cs
+										]
+										button "Launch" on-action [
+											script: get-face cs
+											filename: join to file! checksum to-binary script "reboleditor" %.reb
+											attempt [
+												write filename script
+												launch filename
+											]
+										]
+									]
+									hgroup [
+
+										button "From Chat" on-action [
+											set-face cs get-face chat-area
+
+										]
+										button "Clean" on-action [
+											attempt [
+												set-face cs clean-script get-face cs
+											]
+										]
+										button "Paste" on-action [
+											set-face chat-area get-face cs
+											close-window face
+										]
 									]
 								]
 							]
