@@ -3,7 +3,7 @@ REBOL [
 	file: %httpd.reb
 	author: [abolka "Graham Chiu"]
 	date: [4-Nov-2009 11-May-2014]
-	version: 0.0.4
+	version: 0.0.5
 ]
 
 do http://reb4.me/r3/altwebform.r
@@ -209,7 +209,7 @@ handle-request: func [config req
 									; now start deleting all keys.  Might be duplicates so go thru all groups
 									until [
 										remove-key start so-db
-										++ start > finish
+										++ start >= finish
 									]
 									save-db
 									data: {"ok"}
@@ -248,7 +248,7 @@ handle-request: func [config req
 									if not find db start [
 										append db start
 									]
-									++ start > finish
+									++ start >= finish
 								]
 								db: sort unique db
 								save-db
