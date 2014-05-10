@@ -2,8 +2,8 @@ REBOL [
 	title: "SO chat classifier"
 	file: %httpd.reb
 	author: [abolka "Graham Chiu"]
-	date: [4-Nov-2009 10-May-2014]
-	version: 0.0.3
+	date: [4-Nov-2009 11-May-2014]
+	version: 0.0.4
 ]
 
 do http://reb4.me/r3/altwebform.r
@@ -16,25 +16,30 @@ so-db: [
 		"johnk" ["password"]
 		"rgchris" ["password"]
 	]
-	"rebol3" [
-		1 2 3
-	]
-	"red" [
-		4 5 6
-	]
-	"r3gui" [
-		7 8 9
-	]
-	"general" [
-		10 11 12
-	]
-]
-
-if exists? %so-db.reb [
-	so-db: load %so-db.reb
+	"altme-announce" []
+	"announce" []
+	"android" []
+	"Cheyenne" []
+	"curecode" []
+	"databases" []
+	"general" [10 11 12]
+	"google-groups" []
+	"parse" []
+	"schemes" []
+	"rebol2" []
+	"rebol3" [1 2 3]
+	"red" [4 5 6]
+	"r3gui" [7 8 9]
+	"sl4a" []
 ]
 
 save-db: does [save %so-db.reb so-db]
+
+either exists? %so-db.reb [
+	so-db: load %so-db.reb
+][
+	save-db
+]
 
 remove-key: funct [key so-db][
 	foreach [class db] next next so-db [
@@ -86,7 +91,7 @@ handle-request: func [config req
 			switch/default verb [
 				"GET" [
 					; gets from start to end of result
-					class: none
+					class: start: finish: none
 					either parse URI [
 						some [
 							'class set class string!
@@ -96,13 +101,27 @@ handle-request: func [config req
 							'end set finish string! (finish: attempt [to integer! finish])
 						]
 					][
-						; if class is none, assume search all groups
-						either not all [start finish][
-							data: {"notoky-no start or end"}
-						][
-							set [start finish] sort reduce [start finish]
-							either class [
-								; named class
+						case [
+							all [none? start none? finish none? class][
+								;  wants all the group names
+								data: to-json collect [
+									foreach [class db] next next so-db [
+										keep class
+									]
+								]
+							]
+							all [none? start none? finish class][
+								; assume wants all this named group values
+								either db: select so-db class [
+									data: to-json append/only copy reduce [class] db
+								][
+									; class does not exist
+									data: {"notok - noexistent class"}
+								]
+							]
+							all [class start finish][
+								; named class with a specified range
+								set [start finish] sort reduce [start finish]
 								either db: select so-db class [
 									result: collect [
 										foreach id db [
@@ -115,14 +134,17 @@ handle-request: func [config req
 										]
 
 									]
+
 									data: to-json append/only copy reduce [class] result
 								][
 									; class does not exist
 									data: {"notok - noexistent class"}
 								]
-							][
+							]
+							all [start finish none? class][
+								; unnamed class with a specified range
+								set [start finish] sort reduce [start finish]
 								outer: copy []
-
 								foreach [class db] next next so-db [
 									result: collect [
 										foreach id db [
@@ -133,7 +155,9 @@ handle-request: func [config req
 												keep id
 											]
 										]
+
 									]
+
 									if not empty? result [
 										append outer class
 										append/only outer result
@@ -142,14 +166,20 @@ handle-request: func [config req
 								probe outer
 								data: to-json outer
 							]
-						][; didn't parse the GET URI
-							data: {"notok - no parse GET uri"}
+							true [
+								data: {"notok - wrong combination of parameters for GET"}
+							]
 						]
 					][
-						data: {"notok - not parsing outer URI"}
+						; default for not being able to parse parameters
+						data: to-json collect [
+							foreach [class db] next next so-db [
+								keep class
+							]
+						]
+
 					]
 				]
-
 				"DELETE" [; DELETE "user=Graham&password=xyz&start=n&end=n"
 					print "entered DELETE"
 					user: password: start: finish: none
@@ -179,8 +209,7 @@ handle-request: func [config req
 									; now start deleting all keys.  Might be duplicates so go thru all groups
 									until [
 										remove-key start so-db
-										++ start
-										start > finish
+										++ start > finish
 									]
 									save-db
 									data: {"ok"}
@@ -191,7 +220,7 @@ handle-request: func [config req
 								data: {"notok - not authorised"}
 							]
 						][
-							data: {"notok - not all params supplied to DELETE"}
+							data: {"notok - not all params supplied to DELETE needs user password start end"}
 						]
 					][
 						data: {"notok - not parse PUT rule"}
@@ -216,10 +245,12 @@ handle-request: func [config req
 							either db: select so-db class [
 								set [start finish] sort reduce [start finish]
 								until [
-									append db start
-									++ start
-									start > finish
+									if not find db start [
+										append db start
+									]
+									++ start > finish
 								]
+								db: sort unique db
 								save-db
 								data: {"ok"}
 							][
@@ -233,7 +264,7 @@ handle-request: func [config req
 					]
 				]
 
-				"POST" [
+				"POST" [; used for admin functions such as adding groups, changing passwords etc
 					data: {"notok - currently not supported"}
 				]
 			][
@@ -244,7 +275,7 @@ handle-request: func [config req
 		print "failed to parse req"
 		data: {"notok - failed to parse request"}
 	]
-	reduce [200 "text/plain" data]
+	reduce [200 "application/json" data]
 ]
 
 awake-client: func [event /local port res] [
