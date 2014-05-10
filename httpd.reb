@@ -3,7 +3,7 @@ REBOL [
 	file: %httpd.reb
 	author: [abolka "Graham Chiu"]
 	date: [4-Nov-2009 10-May-2014]
-	version: 0.0.2
+	version: 0.0.3
 ]
 
 do http://reb4.me/r3/altwebform.r
@@ -63,191 +63,187 @@ send-response: func [port res /local code text type body] [
 
 separator: "^/^/"
 handle-request: func [config req
-	/local uri data result outer db admin-db user-data start finish class
+	/local uri data result outer db admin-db user-data start finish class verb
 ] [
 	print ["Request is: " to string! req]
-	data: {"notok" - default fall thru"}
+	data: {"notok - default fall thru"}
 	either parse to string! req [
 		copy verb to space space [
-			copy uri to " " if (remove uri equal? verb "GET") to end
+			copy uri to space if (remove uri equal? verb "GET") to end
 			|
 			thru separator copy URI to end
 		]
 	][
 		print "parsed request okay"
-		either find ["DELETE" "PUT" "GET" "POST"] verb [
-			?? uri
-			either error? try [
-				uri: load-webform uri
-			][
-				data: {"notok - faulty parameters"}
-			][
-				?? URI
-				?? verb
-				switch verb [
-					"GET" [
-						; gets from start to end of result
-						class: none
-						either parse URI [
-							some [
-								'class set class string!
-								|
-								'start set start string! (start: attempt [to integer! start])
-								|
-								'end set finish string! (finish: attempt [to integer! finish])
-							]
-						][
-							; if class is none, assume search all groups
-							either not all [start finish][
-								data: {"notoky-no start or end"}
-							][
-								set [start finish] sort reduce [start finish]
-								either class [
-									; named class
-									either db: select so-db class [
-										result: collect [
-											foreach id db [
-												if all [
-													id >= start
-													id <= finish
-												][
-													keep id
-												]
-											]
-
-										]
-										data: to-json append/only copy reduce [class] result
-									][
-										; class does not exist
-										data: {"notok - noexistent class"}
-									]
-								][
-									outer: copy []
-
-									foreach [class db] next next so-db [
-										result: collect [
-											foreach id db [
-												if all [
-													id >= start
-													id <= finish
-												][
-													keep id
-												]
-											]
-										]
-										if not empty? result [
-											append outer class
-											append/only outer result
-										]
-									]
-									probe outer
-									data: to-json outer
-								]
-							][; didn't parse the GET URI
-								data: {"notok - no parse GET uri"}
-							]
-						][
-							data: {"notok - not parsing outer URI"}
+		?? uri
+		either error? try [
+			uri: load-webform uri
+		][
+			data: {"notok - faulty parameters"}
+		][
+			?? URI
+			?? verb
+			switch/default verb [
+				"GET" [
+					; gets from start to end of result
+					class: none
+					either parse URI [
+						some [
+							'class set class string!
+							|
+							'start set start string! (start: attempt [to integer! start])
+							|
+							'end set finish string! (finish: attempt [to integer! finish])
 						]
-					]
-
-					"DELETE" [; DELETE "user=Graham&password=xyz&start=n&end=n"
-						print "entered DELETE"
-						user: password: start: finish: none
-						either parse URI [
-							some [
-								'user set user string!
-								|
-								'password set password string!
-								|
-								'start set start string! (start: attempt [to integer! start])
-								|
-								'end set finish string! (finish: attempt [to integer! finish])
-							]
+					][
+						; if class is none, assume search all groups
+						either not all [start finish][
+							data: {"notoky-no start or end"}
 						][
-							print "parsed DELETE url okay"
-							either all [
-								user password start finish
-							][; now to check if authorised
-								admin-db: select so-db 'admin
-								either user-data: select admin-db user [
-									print "found user"
-									?? user-data
-									either user-data/1 = password [
-										print "user passsword is okay"
-										; authorised - found user and password matches
-										set [start finish] sort reduce [start finish]
-										; now start deleting all keys.  Might be duplicates so go thru all groups
-										until [
-											remove-key start so-db
-											++ start
-											start > finish
-										]
-										save-db
-										data: {"ok"}
-									][
-										data: {"notok - not authorised"}
-									]
-								][
-									data: {"notok - not authorised"}
-								]
-							][
-								data: {"notok - not all params supplied to DELETE"}
-							]
-						][
-							data: {"notok - not parse PUT rule"}
-						]
-					]
-
-					"PUT" [
-						print "entered PUT"
-						either parse URI [
-							some [
-								'class set class string!
-								|
-								'start set start string! (start: attempt [to integer! start])
-								|
-								'end set finish string! (finish: attempt [to integer! finish])
-							]
-						][
-							print "parsed PUT url okay"
-							either all [
-								class start finish
-							][
+							set [start finish] sort reduce [start finish]
+							either class [
+								; named class
 								either db: select so-db class [
+									result: collect [
+										foreach id db [
+											if all [
+												id >= start
+												id <= finish
+											][
+												keep id
+											]
+										]
+
+									]
+									data: to-json append/only copy reduce [class] result
+								][
+									; class does not exist
+									data: {"notok - noexistent class"}
+								]
+							][
+								outer: copy []
+
+								foreach [class db] next next so-db [
+									result: collect [
+										foreach id db [
+											if all [
+												id >= start
+												id <= finish
+											][
+												keep id
+											]
+										]
+									]
+									if not empty? result [
+										append outer class
+										append/only outer result
+									]
+								]
+								probe outer
+								data: to-json outer
+							]
+						][; didn't parse the GET URI
+							data: {"notok - no parse GET uri"}
+						]
+					][
+						data: {"notok - not parsing outer URI"}
+					]
+				]
+
+				"DELETE" [; DELETE "user=Graham&password=xyz&start=n&end=n"
+					print "entered DELETE"
+					user: password: start: finish: none
+					either parse URI [
+						some [
+							'user set user string!
+							|
+							'password set password string!
+							|
+							'start set start string! (start: attempt [to integer! start])
+							|
+							'end set finish string! (finish: attempt [to integer! finish])
+						]
+					][
+						print "parsed DELETE url okay"
+						either all [
+							user password start finish
+						][; now to check if authorised
+							admin-db: select so-db 'admin
+							either user-data: select admin-db user [
+								print "found user"
+								?? user-data
+								either user-data/1 = password [
+									print "user passsword is okay"
+									; authorised - found user and password matches
 									set [start finish] sort reduce [start finish]
+									; now start deleting all keys.  Might be duplicates so go thru all groups
 									until [
-										append db start
+										remove-key start so-db
 										++ start
 										start > finish
 									]
 									save-db
 									data: {"ok"}
 								][
-									data: {"notok - unknown class"}
+									data: {"notok - not authorised"}
 								]
 							][
-								data: {"notok - not all params supplied to PUT"}
+								data: {"notok - not authorised"}
 							]
 						][
-							data: {"notok - not parse PUT rule"}
+							data: {"notok - not all params supplied to DELETE"}
 						]
+					][
+						data: {"notok - not parse PUT rule"}
 					]
+				]
 
-					"POST" [
-						data: {"notok - currently not supported"}
+				"PUT" [
+					print "entered PUT"
+					either parse URI [
+						some [
+							'class set class string!
+							|
+							'start set start string! (start: attempt [to integer! start])
+							|
+							'end set finish string! (finish: attempt [to integer! finish])
+						]
+					][
+						print "parsed PUT url okay"
+						either all [
+							class start finish
+						][
+							either db: select so-db class [
+								set [start finish] sort reduce [start finish]
+								until [
+									append db start
+									++ start
+									start > finish
+								]
+								save-db
+								data: {"ok"}
+							][
+								data: {"notok - unknown class"}
+							]
+						][
+							data: {"notok - not all params supplied to PUT"}
+						]
+					][
+						data: {"notok - not parse PUT rule"}
 					]
-				] ; end of switch
+				]
+
+				"POST" [
+					data: {"notok - currently not supported"}
+				]
+			][
+				data: {"notok - unrecognised html verb"}
 			]
-			; data
-		] [;unrecognised html verb
-			data: {"notok - unrecognized verb"}
 		]
 	][
 		print "failed to parse req"
 		data: {"notok - failed to parse request"}
 	]
-	; ?? data
 	reduce [200 "text/plain" data]
 ]
 
