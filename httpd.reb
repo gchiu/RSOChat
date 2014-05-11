@@ -3,7 +3,11 @@ REBOL [
 	file: %httpd.reb
 	author: [abolka "Graham Chiu"]
 	date: [4-Nov-2009 11-May-2014]
-	version: 0.0.6
+	version: 0.0.7
+	notes: {
+            0.0.7 change to using userids and not names since names can change every 30 days
+
+          }
 ]
 
 do http://reb4.me/r3/altwebform.r
@@ -11,10 +15,10 @@ import http://reb4.me/r3/altjson.r
 
 so-db: [
 	admin [
-		"GrahamChiu" ["password"]
-		"earl" ["password "]
-		"johnk" ["password"]
-		"rgchris" ["password"]
+		"76852" ["password" "GrahamChiu"]
+		"135724" ["password" "earl"]
+		"1864998" ["password" "johnk"]
+		"292969" ["password" "rgchris"]
 	]
 	"altme-announce" []
 	"announce" []
