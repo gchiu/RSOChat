@@ -3,7 +3,7 @@ REBOL [
 	file: %httpd.reb
 	author: [abolka "Graham Chiu"]
 	date: [4-Nov-2009 11-May-2014]
-	version: 0.0.5
+	version: 0.0.6
 ]
 
 do http://reb4.me/r3/altwebform.r
@@ -207,9 +207,9 @@ handle-request: func [config req
 									; authorised - found user and password matches
 									set [start finish] sort reduce [start finish]
 									; now start deleting all keys.  Might be duplicates so go thru all groups
-									until [
+									while [start <= finish] [
 										remove-key start so-db
-										++ start >= finish
+										++ start
 									]
 									save-db
 									data: {"ok"}
@@ -244,11 +244,11 @@ handle-request: func [config req
 						][
 							either db: select so-db class [
 								set [start finish] sort reduce [start finish]
-								until [
+								while [start <= finish] [
 									if not find db start [
 										append db start
 									]
-									++ start >= finish
+									++ start
 								]
 								db: sort unique db
 								save-db
